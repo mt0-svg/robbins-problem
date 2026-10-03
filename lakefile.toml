@@ -32,7 +32,7 @@ leanOptions = { autoImplicit = true, relaxedAutoImplicit = true }
 # The development and the main theorems (Robbins/Main.lean imports the data modules of RobbinsSO).
 [[lean_lib]]
 name = "Main"
-globs = ["Robbins.Basic.+", "Robbins.Relax.+", "Robbins.Mono.+", "Robbins.Cert.+", "Robbins.Lanes.+"]
+globs = ["Robbins.Basic.+", "Robbins.Relax.+", "Robbins.Mono.+", "Robbins.Cert.+", "Robbins.Lanes.+", "Robbins.Target", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
 roots = ["Robbins.Target", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
 
 # The data of the certificate and the theorems that check it, written by code/formal-proof/gen.sh (not committed).
