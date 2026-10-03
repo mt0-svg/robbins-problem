@@ -1,0 +1,10 @@
+n = 300, m = 5, Q = 2^36, K = 15, J = 26
+J recomputed: 26
+P_j: 26 values, increasing in (0,Q): 1
+j_t: 300 values (t = 1..n), nondecreasing: 1, j_n = 21 < J: 1
+times t < n with j_t = j_(t+1): 280; with j_t < j_(t+1): 19
+grid states at one time, at most binomial(K+m, m) = 15504
+0.35 rho^(K-1) = 13.7808
+u_1 numerator = 137704521264
+u_1 = 137704521264 / 2^36, floor(10^8 u_1) = 200386451
+2 Q = 137438953472, u_1 numerator > 2 Q: 1

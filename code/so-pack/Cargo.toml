@@ -1,0 +1,12 @@
+[package]
+name = "robbins-so-pack"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+overflow-checks = true

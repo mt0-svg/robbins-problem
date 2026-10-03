@@ -1,0 +1,51 @@
+name = "robbins"
+version = "1.0.0"
+description = "The value of Robbins' problem is larger than 2: V(n) > 2.0038 for every n >= 300, formalized in Lean 4"
+keywords = ["math", "probability", "optimal stopping", "Robbins' problem", "formal verification"]
+license = "Apache-2.0"
+licenseFiles = ["LICENSE", "NOTICE"]
+preferReleaseBuild = true
+releaseRepo = "https://github.com/mt0-svg/robbins-problem"
+defaultTargets = ["Statement", "Main", "Challenge", "Solution"]
+
+[leanOptions]
+pp.unicode.fun = true
+relaxedAutoImplicit = false
+autoImplicit = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.34.1"
+
+# The definitions of the statement: the law of the values, the stopping rules, the rank, v n.
+[[lean_lib]]
+name = "Statement"
+roots = ["Robbins.Statement"]
+
+# The second formalization of the problem (Proposition A.1), written with auto-bound implicits.
+[[lean_lib]]
+name = "Indep"
+roots = ["Robbins.StatementCheck.Indep"]
+leanOptions = { autoImplicit = true, relaxedAutoImplicit = true }
+
+# The development and the main theorems (Robbins/Main.lean imports the data modules of RobbinsSO).
+[[lean_lib]]
+name = "Main"
+globs = ["Robbins.Basic.+", "Robbins.Relax.+", "Robbins.Mono.+", "Robbins.Cert.+", "Robbins.Lanes.+"]
+roots = ["Robbins.Target", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
+
+# The data of the certificate and the theorems that check it, written by code/formal-proof/gen.sh (not committed).
+[[lean_lib]]
+name = "Data"
+globs = ["RobbinsSO.+"]
+
+# The statements with `sorry`, which nothing imports, and the module that proves them: the pair Comparator checks
+# (config.json).
+[[lean_lib]]
+name = "Challenge"
+roots = ["Robbins.Challenge"]
+
+[[lean_lib]]
+name = "Solution"
+roots = ["Robbins.Solution"]

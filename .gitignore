@@ -1,0 +1,16 @@
+/.lake
+paper/main.aux
+paper/main.log
+paper/main.fls
+paper/main.fdb_latexmk
+paper/main.out
+paper/main.pdf
+paper/main.bbl
+paper/main.blg
+paper/main.toc
+paper/main.synctex.gz
+/RobbinsSO/
+/code/soq/target/
+/code/so-pack/target/
+/code/formal-proof/clean_build.out
+/code/formal-proof/clean_build_modules.txt

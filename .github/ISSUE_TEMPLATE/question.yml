@@ -1,0 +1,10 @@
+name: Question or comment
+description: A question about the result, the proofs or the computations, or any other comment
+labels: [question]
+body:
+  - type: textarea
+    id: body
+    attributes:
+      label: Question or comment
+    validations:
+      required: true

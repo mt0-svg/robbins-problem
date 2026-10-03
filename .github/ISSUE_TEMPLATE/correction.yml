@@ -1,0 +1,23 @@
+name: Correction
+description: An error in the paper, the Lean proofs or the code
+labels: [correction]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Section, statement number or page of the paper, or the file and line.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: What the text or code says, and what it should say. A counterexample or a failing command helps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release tag (for example v1.0.0) or the commit.

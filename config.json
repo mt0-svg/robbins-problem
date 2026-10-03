@@ -1,0 +1,23 @@
+{
+  "challenge_module": "Robbins.Challenge",
+  "solution_module": "Robbins.Solution",
+  "theorem_names": [
+    "Robbins.v300",
+    "Robbins.main_so",
+    "Robbins.main_so_limit",
+    "Robbins.two_lt_v",
+    "Robbins.relaxed300",
+    "Robbins.RelaxedSubSolution.val_one_le_v",
+    "Robbins.v_mono",
+    "Robbins.robbinsValue_eq_v",
+    "Robbins.lower_bound_of_base",
+    "Robbins.limit_lower_bound_of_base"
+  ],
+  "permitted_axioms": [
+    "propext",
+    "Quot.sound",
+    "Classical.choice"
+  ],
+  "enable_nanoda": true,
+  "lean_kernel": false
+}

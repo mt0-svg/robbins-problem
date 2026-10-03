@@ -1,0 +1,737 @@
+name: CI
+
+# The data of the certificate: the job data builds soq and so-pack (code/soq, code/so-pack, Rust pinned by their
+# rust-toolchain.toml), runs soq on the run of Section 5 of the paper (code/soq/run.sh) and compares its output and
+# its grid file with code/soq/out, writes the Lean modules of the tables and of the theorems that check them
+# (code/formal-proof/gen.sh, under RobbinsSO/, not committed), compares their sha256 with
+# code/formal-proof/modules.sha256, and hands them to the Lean jobs as the artifact robbins-so.
+# The Lean package: Mathlib from its cache, then the package's own modules, compiled by
+# code/formal-proof/clean_build.sh in dependency order, the heavy modules one at a time and the step modules four at
+# a time, sized for the standard public Linux runner, which has 16 GB of memory as GitHub documents it (the
+# header of the script lists its settings). The package's .lake/build is restored first, from the actions cache
+# (the last build on this toolchain and manifest), else from the Lake build archive of the latest release, so only
+# the modules that changed and those that import them are compiled;
+# Comparator replays the theorems of config.json and every declaration they depend on, in the kernel config.json
+# names (nanoda alone with lean_kernel false, the Lean kernel with enable_nanoda false), whatever was restored.
+# Then the checks: every target up to date, the axioms of the theorems of config.json, a scan of the sources,
+# Comparator and its negative controls (.github/comparator-controls.tsv, when present).
+# The build runs as a chain of up to five jobs. Each one continues the build of the previous one (handed over
+# as the artifact lake-build) for at most 300 minutes, under the 6 hour limit of a job, and the chain stops at
+# the first job that ends it. The last job fails if the build is still not complete.
+#
+# The computations: the job data above, and the job gp, which reruns code/gp/numbers.gp (the numbers of the paper
+# derived from the grid file and the output of soq) and compares its output with code/gp/numbers.out.
+# Every job uploads the complete output of each check and one result line per check as an artifact verify-*, which
+# release.yml collects into the verification archive of a release. A run started by hand on the default branch ends
+# with the job badges, which writes the three badges of the README to the branch badges, with the page run.html that
+# their links open, which forwards to this run.
+# Only commits that touch the build or the computations run it; a newer push cancels the older run on the same branch.
+# On a push to an existing branch the job changes reads the files of the pushed commits, and only the jobs of the parts
+# they touch run: the job gp for code/gp and code/soq/out; the job data and the Lean jobs for the Lean sources, the
+# Lake files, config.json, code/soq, code/so-pack and code/formal-proof/. A change of this file, a run by hand, a pull
+# request and a new branch run everything. A release takes a run started by hand on its tagged commit (release.yml).
+on:
+  push:
+    branches: ["**"]
+    paths: &build-paths
+      - "**.lean"
+      - lakefile.toml
+      - lake-manifest.json
+      - lean-toolchain
+      - config.json
+      - code/**
+      - .github/comparator-controls.tsv
+      - .github/comparator-lean-kernel.patch
+      - .github/workflows/ci.yml
+  pull_request:
+    paths: *build-paths
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ROOT: Robbins
+  PACKAGE: robbins
+
+jobs:
+  changes:
+    name: Changed parts
+    runs-on: ubuntu-latest
+    outputs:
+      compute: ${{ steps.diff.outputs.compute }}
+      lean: ${{ steps.diff.outputs.lean }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Files of the pushed commits
+        id: diff
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT" != push ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "$zero" ] ||
+            ! files=$(git diff --name-only --no-renames "$BEFORE" "$SHA"); then
+            echo "$EVENT${BEFORE:+ from $BEFORE}: every job runs"
+            { echo compute=true; echo lean=true; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          compute=false lean=false
+          while IFS= read -r f; do
+            case "$f" in .github/workflows/ci.yml) compute=true lean=true ;; esac
+            case "$f" in code/gp/* | code/soq/out/*) compute=true ;; esac
+            case "$f" in *.lean | lakefile.toml | lake-manifest.json | lean-toolchain | config.json | code/soq/* | code/so-pack/* | code/formal-proof/* | .github/comparator-*) lean=true ;; esac
+          done <<< "$files"
+          printf '%s\n' "$files"
+          echo "compute=$compute lean=$lean"
+          { echo "compute=$compute"; echo "lean=$lean"; } >> "$GITHUB_OUTPUT"
+
+  scan:
+    name: Source scan
+    needs: changes
+    if: needs.changes.outputs.lean == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: sorry, admit and native_decide outside comments and strings
+        shell: bash
+        run: |
+          set -u
+          mkdir -p verify/lean verify/results
+          cat > scan.awk <<'EOF'
+          FNR == 1 { depth = 0 }
+          {
+            s = $0; out = ""; i = 1; n = length(s)
+            while (i <= n) {
+              two = substr(s, i, 2)
+              if (depth > 0) {
+                if (two == "/-") { depth++; i += 2 } else if (two == "-/") { depth--; i += 2 } else i++
+                continue
+              }
+              if (two == "/-") { depth = 1; i += 2; continue }
+              if (two == "--") break
+              c = substr(s, i, 1)
+              if (c == "\"") {
+                j = i + 1
+                while (j <= n) { d = substr(s, j, 1); if (d == "\\") { j += 2; continue }; if (d == "\"") break; j++ }
+                out = out " "; i = j + 1; continue
+              }
+              out = out c; i++
+            }
+            if (match(out, "(^|[^A-Za-z0-9_.'!?])(" W ")([^A-Za-z0-9_'!?]|$)")) print FILENAME ":" FNR ": " $0
+          }
+          EOF
+          { find "$ROOT" -name '*.lean' ! -path "$ROOT/Challenge.lean"; [ ! -f "$ROOT.lean" ] || echo "$ROOT.lean"; } | LC_ALL=C sort > files.txt
+          {
+            echo "# Uses of sorry, admit and native_decide outside comments and string literals, in the $(wc -l < files.txt) files of $ROOT/ other than Challenge.lean, and of admit and native_decide in Challenge.lean (whose statements end in sorry)."
+            xargs awk -v W='sorry|admit|native_decide' -f scan.awk < files.txt
+            awk -v W='admit|native_decide' -f scan.awk "$ROOT/Challenge.lean"
+          } > scan.txt
+          cat scan.txt
+          hits=$(($(wc -l < scan.txt) - 1))
+          echo "# $hits uses" >> scan.txt
+          cp scan.txt verify/lean/source-scan.txt
+          if [ "$hits" -eq 0 ]; then r=PASS; else r=FAIL; fi
+          printf 'source-scan\tscan of %s/ for sorry, admit and native_decide outside comments\t%s uses\t%s\tlean/source-scan.txt\n' "$ROOT" "$hits" "$r" > verify/results/source-scan.tsv
+          [ "$r" = PASS ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-source-scan
+          path: verify/
+
+  data:
+    name: Data modules
+    needs: changes
+    if: needs.changes.outputs.lean == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: soq on the run of the paper, its tables, and the Lean modules written from them
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p verify/data verify/results verify/versions
+          s0=$(date +%s)
+          code/soq/run.sh "$RUNNER_TEMP/tables" > verify/data/soq.txt
+          (cd code/soq && rustc --version) > verify/versions/rust.txt
+          if cmp verify/data/soq.txt code/soq/out/soq-m5-n300-r1.3-w0.35-14.txt; then r1=PASS; else r1=FAIL; fi
+          { echo "# soq 300 5 1.3 1 0.35 14 emitall: grid.txt (n m SH K J, then gpt[0..J-1], then start[1..n])"; cat "$RUNNER_TEMP/tables/grid.txt"; } > verify/data/grid.txt
+          (cd "$RUNNER_TEMP/tables" && sha256sum -- * | LC_ALL=C sort -k2) > verify/data/tables.sha256
+          if cmp verify/data/grid.txt code/soq/out/grid-m5-n300-r1.3-w0.35-14.txt &&
+            cmp verify/data/tables.sha256 code/soq/out/tables.sha256; then r2=PASS; else r2=FAIL; fi
+          printf 'soq\tcode/soq/run.sh, compared with code/soq/out (output, grid file, sha256 of the tables)\t%s s\t%s\tdata/soq.txt\n' \
+            "$(($(date +%s) - s0))" "$([ $r1 = PASS ] && [ $r2 = PASS ] && echo PASS || echo FAIL)" > verify/results/soq.tsv
+          s0=$(date +%s); rc=0
+          code/formal-proof/gen.sh N300 "$RUNNER_TEMP/tables" . all > verify/data/gen.txt 2>&1 || rc=$?
+          find RobbinsSO -type f | LC_ALL=C sort | xargs sha256sum > verify/data/modules.sha256
+          if [ "$rc" -eq 0 ] && cmp verify/data/modules.sha256 code/formal-proof/modules.sha256; then r3=PASS; else r3=FAIL; fi
+          printf 'data\tcode/formal-proof/gen.sh, sha256 compared with code/formal-proof/modules.sha256\t%s files, %s s\t%s\tdata/modules.sha256\n' \
+            "$(wc -l < verify/data/modules.sha256)" "$(($(date +%s) - s0))" "$r3" > verify/results/data.tsv
+          cat verify/results/*.tsv
+          [ $r1 = PASS ] && [ $r2 = PASS ] && [ $r3 = PASS ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: robbins-so
+          path: RobbinsSO
+          compression-level: 6
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-data
+          path: verify/
+
+  build-1:
+    name: Lean build, part 1
+    needs: [changes, data]
+    if: needs.changes.outputs.lean == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PART: "1"
+      LAST: "false"
+    outputs:
+      done: ${{ steps.build.outputs.done }}
+    steps: &build-steps
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/checkout@v5
+      - name: The data modules of the job data
+        uses: actions/download-artifact@v4
+        with:
+          name: robbins-so
+          path: RobbinsSO
+      - name: Set up Lean and fetch the Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-mathlib-cache: true
+          use-github-cache: false
+      - name: Build of the previous part
+        if: env.PART != '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: lake-build
+          path: .lake/build
+      - name: Earlier build from the cache
+        id: cache
+        if: env.PART == '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .lake/build
+            !.lake/build/**/*.setup.json
+          key: lake-build-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-build-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+      - name: Earlier build from the latest release
+        if: env.PART == '1' && steps.cache.outputs.cache-matched-key == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          a=$PACKAGE-x86_64-unknown-linux-gnu.tar.gz
+          if gh release download --pattern "$a" -D /tmp 2> /dev/null; then
+            mkdir -p .lake/build && tar -xzf "/tmp/$a" -C .lake/build && rm "/tmp/$a"
+            echo "Restored the build of the latest release."
+          else
+            echo "No release build archive: a build from scratch."
+          fi
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          set -u
+          # Each part writes its own clean_build.out and clean_build_modules.txt; parts 2 to 5 continue (RESUME=1)
+          # on the build handed over by the previous part.
+          rm -f code/formal-proof/clean_build.out code/formal-proof/clean_build_modules.txt
+          # Part 1 starts from scratch unless an earlier build was restored; the traces decide what is rebuilt.
+          if [ "$PART" = 1 ] && [ ! -d .lake/build/lib ]; then resume=0; else resume=1; fi
+          rc=0
+          # A restored build that is already up to date needs no pass of clean_build.sh (one lake call per few modules).
+          if [ "$resume" = 1 ] && lake build --no-build Statement Main Challenge Solution > /dev/null 2>&1; then
+            echo "# result: ok, the restored build is up to date (lake build --no-build)" | tee code/formal-proof/clean_build.out
+            : > code/formal-proof/clean_build_modules.txt
+          else
+          timeout -k 2m 300m env RUN_WRAP= HB=1 SB=4 LB=12 PEAK_HEAVY=9G PEAK_STEP=3G PEAK_LIGHT=2G MEM_MARGIN=1G MIN_DISK_GB=3 RESUME=$resume \
+            code/formal-proof/clean_build.sh || rc=$?
+          fi
+          mkdir -p "verify/build/part-$PART" verify/results
+          cp code/formal-proof/clean_build.out code/formal-proof/clean_build_modules.txt "verify/build/part-$PART/" || true
+          last=$(tail -1 code/formal-proof/clean_build.out 2> /dev/null || true)
+          if [ "$rc" -eq 0 ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            printf 'build\tcode/formal-proof/clean_build.sh, parts 1 to %s\t%s\tPASS\tbuild/\n' "$PART" "$last" > verify/results/build.tsv
+          elif [ "$rc" -eq 124 ] && [ "$LAST" != true ]; then
+            echo "done=false" >> "$GITHUB_OUTPUT"
+            echo "Part $PART stopped at its time limit; the next part continues the build."
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+            echo "Build failed (exit $rc): $last"
+            exit 1
+          fi
+      - name: Save the build to the cache
+        if: always() && steps.build.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .lake/build
+            !.lake/build/**/*.setup.json
+          key: lake-build-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lake-build
+          path: .lake/build
+          include-hidden-files: true
+          overwrite: true
+          compression-level: 1
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-build-part-${{ env.PART }}
+          path: verify/
+
+  build-2:
+    name: Lean build, part 2
+    needs: build-1
+    if: needs.build-1.outputs.done != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PART: "2"
+      LAST: "false"
+    outputs:
+      done: ${{ steps.build.outputs.done }}
+    steps: *build-steps
+
+  build-3:
+    name: Lean build, part 3
+    needs: build-2
+    if: needs.build-2.outputs.done != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PART: "3"
+      LAST: "false"
+    outputs:
+      done: ${{ steps.build.outputs.done }}
+    steps: *build-steps
+
+  build-4:
+    name: Lean build, part 4
+    needs: build-3
+    if: needs.build-3.outputs.done != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PART: "4"
+      LAST: "false"
+    outputs:
+      done: ${{ steps.build.outputs.done }}
+    steps: *build-steps
+
+  build-5:
+    name: Lean build, part 5
+    needs: build-4
+    if: needs.build-4.outputs.done != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PART: "5"
+      LAST: "true"
+    outputs:
+      done: ${{ steps.build.outputs.done }}
+    steps: *build-steps
+
+  lean:
+    name: Lean checks
+    needs: [changes, build-1, build-2, build-3, build-4, build-5]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.lean == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      built: ${{ steps.up-to-date.outputs.built }}
+      hypotheses: ${{ steps.facts.outputs.hypotheses }}
+      axioms: ${{ steps.facts.outputs.axioms }}
+      sorryAx: ${{ steps.facts.outputs.sorryAx }}
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/checkout@v5
+      - name: Set up Lean and fetch the Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-mathlib-cache: true
+          use-github-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: lake-build
+          path: .lake/build
+      - name: The data modules of the job data
+        uses: actions/download-artifact@v4
+        with:
+          name: robbins-so
+          path: RobbinsSO
+      - name: Every target up to date, no sorry warning outside Challenge.lean
+        id: up-to-date
+        shell: bash
+        run: |
+          set -u
+          mkdir -p verify/lean verify/results verify/versions
+          rc=0
+          lake build --no-build Statement Main Challenge Solution > up-to-date.txt 2>&1 || rc=$?
+          cat up-to-date.txt
+          cp up-to-date.txt verify/lean/up-to-date.txt
+          n=$(grep "declaration uses 'sorry'" up-to-date.txt | grep -vc "$ROOT/Challenge.lean" || true)
+          if [ "$rc" -eq 0 ] && [ "$n" -eq 0 ]; then r=PASS; else r=FAIL; fi
+          printf 'up-to-date\tlake build --no-build Statement Main Challenge Solution\t%s sorry warnings outside Challenge.lean\t%s\tlean/up-to-date.txt\n' "$n" "$r" > verify/results/up-to-date.tsv
+          [ "$rc" -ne 0 ] || echo "built=true" >> "$GITHUB_OUTPUT"
+          [ "$r" = PASS ]
+      - name: '#print axioms'
+        shell: bash
+        run: |
+          set -u
+          rc=0
+          lake env lean code/formal-proof/main_axioms.lean > axioms.txt 2>&1 || rc=$?
+          cat axioms.txt
+          cp axioms.txt verify/lean/axioms.txt
+          lean --version > verify/versions/lean.txt
+          r=PASS
+          [ "$rc" -eq 0 ] || r=FAIL
+          for t in $(jq -r '.theorem_names[]' config.json); do
+            grep -q "^'$t' depends on axioms: \[" axioms.txt || { echo "no axioms line for $t"; r=FAIL; }
+          done
+          other=$(sed -n "s/^'[^']*' depends on axioms: \[\(.*\)\]$/\1/p" axioms.txt | tr ',' '\n' | tr -d ' ' \
+            | grep -vxE 'propext|Classical\.choice|Quot\.sound' | sort -u | tr '\n' ' ' || true)
+          [ -z "$other" ] || { echo "axioms outside propext, Classical.choice, Quot.sound: $other"; r=FAIL; }
+          printf 'axioms\tlake env lean code/formal-proof/main_axioms.lean\t%s theorems\t%s\tlean/axioms.txt\n' \
+            "$(grep -c 'depends on axioms' axioms.txt)" "$r" > verify/results/axioms.tsv
+          [ "$r" = PASS ]
+      # For the badges: the hypotheses of the theorems of config.json, counted as code/formal-proof/facts.lean says,
+      # and their axioms.
+      - name: code/formal-proof/facts.lean
+        id: facts
+        shell: bash
+        run: |
+          set -eu
+          lake env lean code/formal-proof/facts.lean | tee facts.txt
+          awk '$1 == "hypotheses" || $1 == "axioms" || $1 == "sorryAx" { print $1 "=" $2 }' facts.txt >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-lean
+          path: verify/
+
+  comparator:
+    name: Comparator
+    needs: [changes, lean]
+    if: ${{ !cancelled() && needs.changes.outputs.lean == 'true' && needs.lean.outputs.built == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@v5
+        with:
+          repository: leanprover/comparator
+          ref: d03acab154d269c06e60e4de7e4cc85deebff94b
+          path: .ci/comparator
+
+      - uses: actions/checkout@v5
+        with:
+          repository: Zouuup/landrun
+          ref: 811cfff51ceaf3d9843708aa6d22e9b84ccac8b4
+          path: .ci/landrun
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Build Landrun
+        working-directory: .ci/landrun
+        run: go build -o landrun cmd/landrun/main.go
+
+      - name: Build nanoda
+        run: cargo install --locked --git https://github.com/ammkrn/nanoda_lib --rev 3a2407216ee84a75f9e1aead6803d0578be06ae7 --root "$RUNNER_TEMP/nanoda"
+
+      - name: Set up Lean and fetch the Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-mathlib-cache: true
+          use-github-cache: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lake-build
+          path: .lake/build
+      - name: The data modules of the job data
+        uses: actions/download-artifact@v4
+        with:
+          name: robbins-so
+          path: RobbinsSO
+      # Comparator trusts the challenge module, so it is compiled again from its source inside the sandbox.
+      - name: Drop the build outputs of the challenge module
+        run: |
+          rm -rfv ".lake/build/lib/lean/$ROOT/Challenge" .lake/build/lib/lean/"$ROOT"/Challenge.* \
+            ".lake/build/ir/$ROOT/Challenge" .lake/build/ir/"$ROOT"/Challenge.*
+
+      # The option lean_kernel of config.json (false: nanoda alone replays the export, the build having run the Lean
+      # kernel on every declaration), a patch of this repository on Comparator (.github/comparator-lean-kernel.patch).
+      - name: Patch Comparator
+        run: git -C .ci/comparator apply "$GITHUB_WORKSPACE/.github/comparator-lean-kernel.patch"
+
+      # Comparator at this commit targets Lean v4.34.0; build it with the project's toolchain so that
+      # lean4export reads the project's .olean files.
+      - name: Align the Comparator toolchain
+        run: cp lean-toolchain .ci/comparator/lean-toolchain
+
+      - name: Build Comparator
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: .ci/comparator
+          auto-config: false
+          build: true
+          build-args: lean4export comparator
+          use-mathlib-cache: false
+          use-github-cache: false
+
+      - name: Check lean4export commit
+        run: test "$(git -C .ci/comparator/.lake/packages/lean4export rev-parse HEAD)" = 076e8e57707e813375e8f9da8bf989799ace9680
+
+      - name: Start time
+        run: echo "START=$(date +%s)" >> "$GITHUB_ENV"
+
+      # config.json: the theorems of the solution module against the statements of the challenge module, the permitted
+      # axioms, then nanoda (enable_nanoda; 4 threads, set by Comparator), and the Lean kernel unless lean_kernel is false.
+      - name: Run Comparator
+        id: run
+        shell: bash
+        env:
+          COMPARATOR_LANDRUN: ${{ github.workspace }}/.ci/landrun/landrun
+          COMPARATOR_LEAN4EXPORT: ${{ github.workspace }}/.ci/comparator/.lake/packages/lean4export/.lake/build/bin/lean4export
+          COMPARATOR_NANODA: ${{ runner.temp }}/nanoda/bin/nanoda_bin
+        # One more run, and only one, when lean4export crashed (exit 139) during the export, before any kernel ran;
+        # that run decides. Any other failure is final.
+        run: |
+          run() {
+            systemd-run --property=RestrictAddressFamilies=~AF_UNIX --user --pty --pipe \
+              -E PATH="$PATH" \
+              -E COMPARATOR_LANDRUN="$COMPARATOR_LANDRUN" \
+              -E COMPARATOR_LEAN4EXPORT="$COMPARATOR_LEAN4EXPORT" \
+              -E COMPARATOR_NANODA="$COMPARATOR_NANODA" \
+              --working-directory "$PWD" -- \
+              bash -c 'lake env .ci/comparator/.lake/build/bin/comparator config.json' \
+              2>&1 | tee "$1"
+          }
+          export_crash() {
+            awk '{ sub(/\r$/, "") }
+              /^Exporting #\[/ { exported = 1 }
+              exported && /^uncaught exception: Child exited with 139$/ { crashed = 1 }
+              /kernel on solution|kernel accepts the solution|kernel rejects the solution/ { kernel = 1 }
+              END { exit !(crashed && !kernel) }' "$1"
+          }
+          rc=0
+          run comparator.log || rc=$?
+          retry=no
+          if [ "$rc" != 0 ] && export_crash comparator.log; then
+            retry=yes
+            echo "lean4export exited with 139 during the export, before any kernel: Comparator runs once more"
+            rc=0
+            run comparator-retry.log || rc=$?
+          fi
+          echo "retry=$retry" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # The negative controls of .github/comparator-controls.tsv, when the repository has one, after a pass: each
+      # changes one line of the challenge in place, and Comparator must reject it with the expected message (at the
+      # comparison, before any kernel); the file is restored after each control.
+      - name: Negative controls
+        id: controls
+        if: steps.run.outcome == 'success' && hashFiles('.github/comparator-controls.tsv') != ''
+        shell: bash
+        env:
+          COMPARATOR_LANDRUN: ${{ github.workspace }}/.ci/landrun/landrun
+          COMPARATOR_LEAN4EXPORT: ${{ github.workspace }}/.ci/comparator/.lake/packages/lean4export/.lake/build/bin/lean4export
+          COMPARATOR_NANODA: ${{ runner.temp }}/nanoda/bin/nanoda_bin
+        run: |
+          set -uo pipefail
+          mkdir -p verify/lean
+          : > controls.tsv
+          fail=0
+          while IFS=$'\t' read -r name file old new expect; do
+            case $name in '#'* | '') continue ;; esac
+            s0=$(date +%s); rc=none
+            log=verify/lean/comparator-$name.txt
+            n=$(grep -cxF -- "$old" "$file" || true)
+            if [ "$n" = 1 ]; then
+              cp "$file" "$RUNNER_TEMP/original"
+              awk -v o="$old" -v n="$new" '$0 == o { print n; next } { print }' "$RUNNER_TEMP/original" > "$file"
+              rm -rf ".lake/build/lib/lean/$ROOT/Challenge" .lake/build/lib/lean/"$ROOT"/Challenge.* \
+                ".lake/build/ir/$ROOT/Challenge" .lake/build/ir/"$ROOT"/Challenge.*
+              { echo "control $name: in $file only, the line"; echo "  $old"; echo "is changed to"; echo "  $new"
+                echo "lines that differ from the original: $(diff "$RUNNER_TEMP/original" "$file" | grep -c '^>')"
+              } > "$log"
+              rc=0
+              systemd-run --property=RestrictAddressFamilies=~AF_UNIX --user --pty --pipe \
+                -E PATH="$PATH" \
+                -E COMPARATOR_LANDRUN="$COMPARATOR_LANDRUN" \
+                -E COMPARATOR_LEAN4EXPORT="$COMPARATOR_LEAN4EXPORT" \
+                -E COMPARATOR_NANODA="$COMPARATOR_NANODA" \
+                --working-directory "$PWD" -- \
+                bash -c 'lake env .ci/comparator/.lake/build/bin/comparator config.json' \
+                2>&1 | tee -a "$log" || rc=$?
+              cp "$RUNNER_TEMP/original" "$file"
+              if [ "$rc" != 0 ] && tr -d '\r' < "$log" | grep -qF -- "$expect"; then r=PASS; else r=FAIL; fi
+            else
+              echo "control $name: the line to change is found $n times in $file" > "$log"; r=FAIL
+            fi
+            echo "control $name: $r (exit $rc, expected a rejection with: $expect)" | tee -a "$log"
+            printf 'comparator-%s\tcomparator config.json, %s changed in one line (negative control)\t%s s\t%s\t%s\n' \
+              "$name" "$file" "$(($(date +%s) - s0))" "$r" "lean/comparator-$name.txt" >> controls.tsv
+            [ "$r" = PASS ] || fail=1
+          done < .github/comparator-controls.tsv
+          exit "$fail"
+
+      - name: Record the result
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p verify/lean verify/results
+          secs=$(($(date +%s) - ${START:-$(date +%s)}))
+          cp comparator.log verify/lean/comparator.txt || true
+          files=lean/comparator.txt; retry="no retry"
+          if [ "${{ steps.run.outputs.retry }}" = yes ]; then
+            cp comparator-retry.log verify/lean/comparator-retry.txt || true
+            files="lean/comparator.txt lean/comparator-retry.txt"; retry="retried once after a lean4export crash"
+          fi
+          k=$(jq -r '[.enable_nanoda // false, .lean_kernel != false] | map(tostring) | join(" ")' config.json)
+          case $k in "true true") kernels="nanoda and the Lean kernel" ;; "true false") kernels=nanoda ;; *) kernels="Lean kernel" ;; esac
+          if [ "${{ steps.run.outcome }}" = success ]; then r=PASS; else r=FAIL; fi
+          printf 'comparator\tcomparator config.json (%s against %s, %s; %s)\t%s s\t%s\t%s\n' \
+            "$(jq -r .challenge_module config.json)" "$(jq -r .solution_module config.json)" "$kernels" "$retry" \
+            "$secs" "$r" "$files" > verify/results/comparator.tsv
+          if [ -f controls.tsv ]; then cat controls.tsv >> verify/results/comparator.tsv; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-comparator
+          path: verify/
+
+  gp:
+    name: Numbers of the paper (PARI/GP)
+    needs: changes
+    if: needs.changes.outputs.compute == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq pari-gp
+      - name: code/gp/numbers.gp, compared with code/gp/numbers.out
+        shell: bash
+        run: |
+          set -u
+          mkdir -p verify/gp verify/results verify/versions
+          echo 'print("PARI/GP ", version())' | gp -q > verify/versions/gp.txt
+          s=$(date +%s)
+          (cd code/gp && gp -q -D colors=no numbers.gp < /dev/null) > verify/gp/numbers.txt 2>&1 || true
+          if diff code/gp/numbers.out verify/gp/numbers.txt; then r=PASS; else r=FAIL; fi
+          printf 'gp numbers\tgp -q numbers.gp (in code/gp), compared with code/gp/numbers.out\t%s s\t%s\tgp/numbers.txt\n' $(($(date +%s) - s)) "$r" > verify/results/gp_numbers.tsv
+          cat verify/results/gp_numbers.tsv
+          [ "$r" = PASS ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-gp
+          path: verify/
+
+  # The three badges of the README, from a run started by hand on the default branch: shields.io endpoint files on the
+  # branch badges, and run.html, which sends the links of the README to this run (GitHub Pages serves the branch).
+  badges:
+    name: Badges
+    needs: [changes, scan, data, build-1, build-2, build-3, build-4, build-5, lean, comparator, gp]
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Badge files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+          # Every job of the run whose name this does not match is a computation job (one per matrix entry).
+          NOT_COMPUTATION: '^(Changed parts|Source scan|Lean .*|Paper .*|Comparator|Badges)$'
+        shell: bash
+        run: |
+          set -eu
+          mkdir out
+          result() { jq -r --arg j "$1" '.[$j].result' <<< "$NEEDS"; }
+          fact() { jq -r --arg j "$1" --arg k "$2" '.[$j].outputs[$k] // ""' <<< "$NEEDS"; }
+          # The Lean logo of vscode-lean4 at a pinned commit, without its editor metadata, drawn in white.
+          logo=$(curl -fsSL https://raw.githubusercontent.com/leanprover/vscode-lean4/7a1bb55441807380aa710fd39141971dc532298b/vscode-lean4/images/lean_logo.svg \
+            | tr '\n\t' '  ' | sed -e 's/<?xml[^>]*>//' -e 's/<metadata.*<\/metadata>//' -e 's/<sodipodi:namedview[^>]*>//' \
+              -e 's/#000000/#ffffff/g' -e 's/#0000ff/#ffffff/g' -e 's/  */ /g')
+          badge() {
+            jq -n --arg l "$2" --arg m "$3" --arg c "$4" --arg logo "${5:-}" \
+              '{schemaVersion: 1, label: $l, message: $m, color: $c, style: "flat"} + (if $logo == "" then {} else {logoSvg: $logo} end)' > "out/$1.json"
+            echo "$2: $3 ($4)"
+          }
+          hyps=$(fact lean hypotheses) axioms=$(fact lean axioms) sorry=$(fact lean sorryAx)
+          if [ "$(result lean)" = success ] && [ "$(result scan)" = success ] && [ "$sorry" = false ] && [ -n "$hyps" ]; then
+            if [ "$hyps" -eq 0 ]; then badge lean "Lean Proved" "0 sorry · $axioms axioms" brightgreen "$logo"
+            else badge lean "Lean Proved" "from $hyps hypotheses" orange "$logo"; fi
+          else
+            badge lean "Lean Proved" failed red "$logo"
+          fi
+          if [ "$(result comparator)" = success ]; then
+            k=$(jq -r '[.enable_nanoda // false, .lean_kernel != false] | map(tostring) | join(" ")' config.json)
+            case $k in "true true") m="statement checked · 2 kernels" ;; "true false") m="statement checked · nanoda" ;; *) m="statement checked · Lean kernel" ;; esac
+            badge comparator "Lean Comparator" "$m" brightgreen
+          else
+            badge comparator "Lean Comparator" failed red
+          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            | jq -s --arg re "$NOT_COMPUTATION" '[.[].jobs[] | select((.name | test($re)) | not)]' > jobs.json
+          n=$(jq length jobs.json) k=$(jq 'map(select(.conclusion == "success")) | length' jobs.json)
+          jq -r '.[] | "\(.name): \(.conclusion)"' jobs.json
+          if [ "$n" -gt 0 ] && [ "$k" -eq "$n" ]; then c=brightgreen; else c=red; fi
+          badge certificates "Computation Certificates" "$k/$n reproduced" "$c"
+          run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          printf '<!doctype html>\n<meta charset="utf-8">\n<title>Run %s</title>\n<meta http-equiv="refresh" content="0; url=%s">\n<a href="%s">%s</a>\n' \
+            "$GITHUB_RUN_ID" "$run" "$run" "$run" > out/run.html
+          touch out/.nojekyll
+      - name: Commit to the branch badges
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          url="https://github.com/$GITHUB_REPOSITORY.git"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git config --global "http.https://github.com/.extraheader" "$auth"
+          git clone -q --depth 1 --branch badges "$url" b 2> /dev/null || { git init -q -b badges b && git -C b remote add origin "$url"; }
+          cp -a out/. b/
+          cd b
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- *.json run.html .nojekyll
+          git diff --cached --quiet && { echo "badges unchanged"; exit 0; }
+          git commit -qm "Badges of run $GITHUB_RUN_ID ($GITHUB_SHA)"
+          git push -q origin badges

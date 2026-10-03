@@ -1,0 +1,30 @@
+name: Paper
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to build (the calling ref by default)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: paper
+      - run: cp paper/main.pdf robbins.pdf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: robbins.pdf

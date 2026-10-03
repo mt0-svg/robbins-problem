@@ -1,0 +1,175 @@
+name: Release
+
+# On a tag v* (or by hand for a given tag): the GitHub release of the tagged commit, from the green CI run of
+# that commit. Nothing is compiled again: the Lake build that CI built and checked (build, source scan, axioms,
+# Comparator and its controls, the computation jobs) is packed as it is, with the PDF and the outputs of every check
+# of that run. It takes the green CI run started by hand on the tagged commit; with none, the release stops: run
+# ci.yml on it first, then start this workflow by hand with the tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  ci-run:
+    name: Green CI run of the tagged commit
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run: ${{ steps.find.outputs.run }}
+      sha: ${{ steps.find.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # The green CI run started by hand on the tagged commit: a run on a push has only the jobs of the parts that
+      # the push touched.
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          sha=$(git rev-parse "$TAG^{commit}")
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?status=success&event=workflow_dispatch&head_sha=$sha&per_page=100" \
+            --jq '.workflow_runs[0].id // empty')
+          [ -n "$run" ] || { echo "no successful CI run started by hand on $TAG ($sha): run ci.yml on it (gh workflow run ci.yml --ref $TAG), then this workflow by hand"; exit 1; }
+          echo "CI run $run on $TAG ($sha)"
+          # Every job of that run but Badges must have run and passed: a job skipped by its if, or a step skipped
+          # inside a job, would leave results missing, and counts of result files kept here drift from ci.yml. The
+          # one exception: the continuation parts of a chained Lean build (part 2 on) are skipped by design once an
+          # earlier part ends the build, so they may be skipped, provided part 1 and the job after the chain, which
+          # needs every part and fails on an unfinished build, passed.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" \
+            | jq -r '.jobs[] | select(.name != "Badges") | "\(.conclusion)\t\(.name)"' > jobs.tsv
+          cat jobs.tsv
+          [ -s jobs.tsv ] || { echo "CI run $run lists no job"; exit 1; }
+          cont='^skipped'$'\t''(Lean build|Build), part ([2-9]|[1-9][0-9]+)$'
+          if grep -vE "^success"$'\t' jobs.tsv | grep -vE "$cont"; then
+            echo "CI run $run has jobs that did not pass (above)"; exit 1
+          fi
+          if grep -qE "$cont" jobs.tsv; then
+            if ! grep -qE '^success'$'\t''(Lean build|Build), part 1$' jobs.tsv \
+              || ! grep -qE '^success'$'\t''(Lean checks|Axioms)$' jobs.tsv; then
+              echo "CI run $run: build parts skipped, but part 1 or the job after the chain did not pass"; exit 1
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  pdf:
+    uses: ./.github/workflows/paper.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+
+  release:
+    name: GitHub release
+    needs: [ci-run, pdf]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ needs.ci-run.outputs.run }}
+          github-token: ${{ github.token }}
+          pattern: verify-*
+          merge-multiple: true
+          path: verify
+      - uses: actions/download-artifact@v4
+        with:
+          name: paper
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ needs.ci-run.outputs.run }}
+          github-token: ${{ github.token }}
+          name: lake-build
+          path: .lake/build
+
+      # The archive Lake looks for: the build directory less the .setup.json files (Lake writes them again).
+      # GitHub takes release files under 2 GiB; a larger archive goes out in parts, which Lake cannot download.
+      - name: Lake build archive
+        shell: bash
+        run: |
+          set -eu
+          a=robbins-x86_64-unknown-linux-gnu.tar.gz
+          tar -czf "$a" -C .lake/build --exclude='*.setup.json' .
+          size=$(stat -c %s "$a")
+          if [ "$size" -lt 2000000000 ]; then
+            echo "ASSETS=$a" >> "$GITHUB_ENV"
+            echo "Lake build archive: $a, $size bytes." > archive.md
+          else
+            split -b 1900M -d -a 2 "$a" "$a.part"
+            rm "$a"
+            echo "ASSETS=$(ls "$a".part* | tr '\n' ' ')" >> "$GITHUB_ENV"
+            echo "Lake build archive: $size bytes, in $(ls "$a".part* | wc -l) parts (join them with cat before use; lake build :release cannot download them)." > archive.md
+          fi
+          cat archive.md
+
+      # Expected runs: the files that steps of ci.yml write unconditionally; the computation jobs are covered by the
+      # job check of ci-run (every job of the run passed), so no count of result files is kept here.
+      - name: Verification archive
+        shell: bash
+        run: |
+          set -eu
+          d="verification-$TAG"
+          run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/${{ needs.ci-run.outputs.run }}"
+          for k in source-scan build up-to-date axioms comparator; do
+            [ -f "verify/results/$k.tsv" ] || { echo "missing run: $k"; ls verify/results; exit 1; }
+          done
+          if cut -f4 verify/results/*.tsv | grep -v '^PASS'; then echo "a run did not pass"; exit 1; fi
+          mkdir "$d"
+          cp -r verify/. "$d/"
+          n=$(cat verify/results/*.tsv | wc -l)
+          {
+            echo "# Verification of $TAG"
+            echo
+            echo "Commit ${{ needs.ci-run.outputs.sha }}, $(date -u +%Y-%m-%d), workflow run $run."
+            echo
+            echo "## Versions"
+            echo
+            cat verify/versions/*.txt | sort -u | sed 's/^/    /'
+            echo "    Mathlib $(jq -r '.packages[] | select(.name == "mathlib") | .rev' lake-manifest.json)"
+            echo
+            echo "## Runs"
+            echo
+            echo "| check | command | detail | result | output |"
+            echo "|---|---|---|---|---|"
+            cat verify/results/*.tsv | sort | awk -F '\t' '{printf "| %s | `%s` | %s | %s | `%s` |\n", $1, $2, $3, $4, $5}'
+            echo
+            echo "The build outputs of each part of the build chain are in build/part-N (clean_build.out, one line per lake call; clean_build_modules.txt, the time of every module)."
+          } > "$d/VERIFICATION.md"
+          tar -czf "$d.tar.gz" "$d"
+          cat "$d/VERIFICATION.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "Verification: all $n runs passed ([workflow run]($run)); \`VERIFICATION.md\` in \`$d.tar.gz\` lists them." > summary.md
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          cat "release-notes/$TAG.md" - summary.md archive.md <<< "" > notes.md
+          files="robbins.pdf verification-$TAG.tar.gz $ASSETS"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" $files --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" $files --title "$TAG" --verify-tag --notes-file notes.md
+          fi

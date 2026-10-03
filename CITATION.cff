@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+type: software
+title: "The value of Robbins' problem is larger than 2"
+authors:
+  - name: mt0-svg
+repository-code: "https://github.com/mt0-svg/robbins-problem"
+license: Apache-2.0
+version: v1.0.0
+doi: 10.5281/zenodo.23124501
+keywords:
+  - Robbins' problem
+  - optimal stopping
+  - expected rank
+  - secretary problem
+  - Lean 4
+  - formal verification
+preferred-citation:
+  type: article
+  title: "The value of Robbins' problem is larger than 2"
+  authors:
+    - name: mt0-svg
+  doi: 10.5281/zenodo.23124501
+  url: "https://github.com/mt0-svg/robbins-problem"

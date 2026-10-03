@@ -1,0 +1,638 @@
+\documentclass[11pt]{amsart}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\input{glyphtounicode}
+\pdfgentounicode=1
+\usepackage{amsmath,amssymb}
+\usepackage[table]{xcolor}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage[numbers,sort]{natbib}
+\usepackage{url}
+\usepackage[pdfauthor={311859884+mt0-svg@users.noreply.github.com},
+            pdftitle={The value of Robbins' problem is larger than 2},
+            pdfkeywords={Robbins' problem, optimal stopping, expected rank, full information, secretary problem, lower bound, relaxation, dynamic programming, certificate, Lean 4, formal verification},
+            bookmarksnumbered=true]{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+\makeatletter\g@addto@macro\UrlBreaks{\do\.\do\_}\makeatother
+\Urlmuskip=0mu plus 1mu
+\emergencystretch=3em
+\newcommand{\repo}{https://github.com/mt0-svg/robbins-problem}
+\DeclareRobustCommand{\authorlink}{\href{\repo/issues/new/choose}{\nolinkurl{311859884+mt0-svg@users.noreply.github.com}}}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{question}[theorem]{Question}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\numberwithin{equation}{section}
+
+\newcommand{\lean}[1]{\ignorespaces}
+\newcommand{\computed}[1]{\ignorespaces}
+\newcommand{\leanwait}[1]{\ignorespaces}
+\DeclareUrlCommand\decl{\urlstyle{tt}}
+\newif\ifdraft
+\draftfalse
+\newcommand{\waitson}[1]{\ifdraft{\color{red}\scriptsize\sffamily\,[waits on: #1]}\fi}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\ins}{\operatorname{ins}}
+\newcommand{\drop}{\operatorname{drop}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\ceil}[2]{\lceil #1\rceil_{#2}}
+\newcommand{\cB}{\mathcal{B}}
+\newcommand{\cC}{\mathcal{C}}
+
+\begin{document}
+
+\title{The value of Robbins' problem is larger than 2}
+\author{\authorlink}
+\thanks{2020 {\em Mathematics Subject Classification.} Primary: 60G40; Secondary: 62L15, 90C39, 68V15.\\\indent
+{\em Key words and phrases.} Robbins' problem; optimal stopping; expected rank; full information; secretary problem; relaxation; dynamic programming; certificate; Lean~4.}
+
+\begin{abstract}
+Robbins' problem asks for the least expected rank $V(n)$ of a value selected by a stopping rule from $n$ independent uniform values shown one at a time, with full information, and for its limit $V$. We prove that $V(n)>2.0038$ for every $n\ge300$, so that $V>2$. This answers a question of Bruss and Ferguson, who asked in 1996 whether $V>2$. The proof relaxes the problem to one in which only the five smallest values seen are remembered and each value that leaves the memory is charged the probability that all later values exceed it. A lower bound for the relaxed problem with $300$ values is certified by finite tables of values and slopes on geometric grids, in exact integer arithmetic. The proof is computer-assisted, and the whole of it, the check of the certificate included, is formalized in Lean~4 with Mathlib.
+\end{abstract}
+
+\maketitle
+
+\definecolor{leangreen}{RGB}{0,122,61}
+\definecolor{compblue}{RGB}{0,84,166}
+\newcommand{\badge}[2]{\colorbox{#1}{\strut\textcolor{white}{\sffamily\bfseries\small #2}}}
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.2\textwidth} >{\raggedright\arraybackslash}p{0.7\textwidth}}
+\rowcolor{black!6}
+\multicolumn{2}{>{\raggedright\arraybackslash}p{0.93\textwidth}}{\textit{This is AI-generated research: the results, proofs and code were found and written by AI. Credit goes to all the humans whose work it builds on.}}\\
+\badge{leangreen}{Proved in Lean 4} & Theorem~\ref{thm:main} is proved in Lean~4 with Mathlib, with only the standard axioms: \texttt{Robbins.main\_so}, with no hypothesis, for the bound on $V(n)$ for every $n\ge300$, and \texttt{Robbins.main\_so\_limit} for the same bound on every limit of the sequence $V(n)$.\\
+\rowcolor{black!6}
+\multicolumn{2}{>{\raggedright\arraybackslash}p{0.93\textwidth}}{Lean proofs, code, certificates and the \TeX{} source: \href{\repo}{\texttt{github.com/mt0-svg/robbins-problem}}}\\
+\end{tabular}
+\end{center}
+
+\clearpage
+
+\section{Introduction}\label{sec:intro}
+
+This paper proves that the value of Robbins' problem, the least expected rank in the secretary problem with full information, is larger than~$2$.
+
+\subsection*{The problem}
+Robbins' problem with $n$ values is the following game.
+\begin{enumerate}[label=(\arabic*)]
+\item Values $X_1,\dots,X_n$, independent and uniformly distributed on $[0,1]$, are shown one at a time.
+\item After seeing $X_t$, the decision maker, who knows $X_1,\dots,X_t$, either selects $X_t$ and stops, or rejects it for good. If no value was selected before time $n$, the value $X_n$ is selected.
+\item The loss is the rank $1+\#\{i\le n: X_i<X_\tau\}$ of the selected value $X_\tau$ among the $n$ values.
+\end{enumerate}
+A rule is a family of Borel sets $D_t\subseteq[0,1]^t$, $1\le t\le n$: it selects $X_\tau$, where $\tau$ is the first time $t$ with $(X_1,\dots,X_t)\in D_t$, and $\tau=n$ if there is none. These are the stopping times of the problem (Proposition~\ref{prop:model}). We write $R_D$ for the rank of the value selected by the rule $D$ and
+\[
+V(n)=\inf_D \E[R_D],\qquad V=\lim_{n\to\infty}V(n),
+\]
+the infimum running over all rules for $n$ values. The sequence $V(n)$ is nondecreasing (Theorem~\ref{thm:mono} below), so the limit exists, and Bruss and Ferguson \cite[Corollary~1]{BF93} show $V(n)\le1+4(n-1)/(3(n+1))<7/3$ for every $n$.
+
+\subsection*{The question}
+Robbins remarked that $V(n)$ approaches a value not far from $2$ \cite[Section~2]{Bruss05}. Assaf and Samuel-Cahn \cite[Theorem~3.3]{AS96} proved $V>1.8502$, and Bruss and Ferguson \cite[p.~616, and Table~3, p.~625]{BF93} estimated from the values of truncated problems that $V$ is not smaller than $1.908$. Three years later they wrote \cite[p.~7]{BF96}: ``We even do not know yet whether $V > 2$, although one may, in principle, be able to settle this question numerically by the truncation method proposed in B\&F (1993).'' Bruss and Swan \cite[Section~3, p.~8]{BS09} still give $1.9<V<2.33$ as the known bounds, and Bruss \cite[Section~3, p.~6]{Bruss22} writes in 2022 ``we know $1.908<v\le2.327\ldots$''. Two estimates point below~$2$. Swan \cite[Part~II, Section~1.6, p.~66]{Swan07} found that the extrapolation of the truncation bounds of Bruss and Ferguson ``rather hints to a value around 1.97 than around 2.32''. Bruss \cite[Section~6.2, p.~115]{Bruss05} noted that $V<1.985$ if none of the later ratios of the differences of these bounds exceeds the last one, $0.615$, and read the differences as ``observational support to the conjecture that $V<2$ (and, in particular, that $V<W$). However, we do not know if this is true.'' He wrote, in the list of open questions that closes his survey, where (a) and (b) are the alternatives $V<W$ and $V=W$ for the limit $W$ of the optimal values over memoryless threshold rules:
+
+\begin{question}[{Bruss \cite[Section~8, p.~119]{Bruss05}, 2005}]\label{q:bruss}
+``If neither (a) nor (b) can be proved, we suggest finding an analytical proof that $V<2$ or $V\ge2$.''
+\end{question}
+
+\subsection*{The result}
+\begin{theorem}\label{thm:main}\lean{Robbins.main_so, Robbins.main_so_limit, Robbins.two_lt_v, Robbins.v300, Robbins.lower_bound_of_base, Robbins.limit_lower_bound_of_base, Robbins.RelaxedSubSolution.val_one_le_v, Robbins.v_mono, Robbins.Cert.SO.relaxed_of_tables}
+For every integer $n\ge300$,
+\[
+V(n)\ \ge\ \frac{137704521264}{2^{36}}=2.00386451\ldots
+\]
+In particular $V>2$.
+\end{theorem}
+
+Theorem~\ref{thm:main} answers the question of Bruss and Ferguson and decides the alternative of Question~\ref{q:bruss}: $V>2$, and the conjecture $V<2$ is false. Theorem~\ref{thm:main} contradicts both estimates. Its proof is computer-assisted and checked in Lean, not the analytical proof that Question~\ref{q:bruss} asks for. It does not decide between $V<W$ and $V=W$.
+
+\subsection*{Prior work}
+On the side of upper bounds, the bound $7/3$ comes from a memoryless threshold rule \cite[Corollary~1]{BF93}; Assaf and Samuel-Cahn give threshold rules whose expected rank tends to $2.3267$ and prove $W\ge2.29558$ \cite[Section~4 and Corollary~5.2]{AS96}; Meier and S\"ogner give a rule with expected rank $2.32614$ in the planar Poisson model of the problem \cite[Section~2, p.~335]{MS17}; and Brice, Bruss, Majumdar and Raskin \cite{BBMR25,BBMR26} compute in floating point, with finite Markov decision processes, the expected ranks of rules for $n=5,10,50,100,500$ \cite[Table~1]{BBMR26}, which bound $V(n)$ from above. For small $n$, $V(1)=1$ and $V(2)=5/4$, Assaf and Samuel-Cahn compute $V(3)=1.3915\ldots$ \cite[p.~829]{AS96}, and Dendievel and Swan \cite[Section~3]{DS16} compute $V(4)=1.4932\ldots$ in closed form.
+
+\subsection*{The method}
+The proof has four steps.
+\begin{enumerate}[label=(\arabic*)]
+\item\emph{A relaxation} (Section~\ref{sec:proof} and Section~\ref{sec:relax}). In a relaxed problem the decision maker remembers only the $m$ smallest values seen so far, and a value that leaves the memory is charged the probability that all later values exceed it, a lower bound on the probability that it adds one to the final rank. Every sub-solution of the backward induction of the relaxed problem bounds $V(n)$ from below (Theorem~\ref{thm:relax}). What is left is a dynamic program on memories, vectors of $[0,1]^m$.
+\item\emph{A certificate with values and slopes} (Section~\ref{sec:cert}). Tables on geometric grids, a value and a slope in each coordinate for each grid state, define a function that is affine on each box of the grid. A finite set of inequalities, one for each grid state and each placement of the forgotten coordinates, makes it a sub-solution (Theorem~\ref{thm:sound}). The slopes remove the loss of the order of the width of the boxes that a function constant on boxes incurs, and with them a grid of ratio $1.3$ gives a bound above~$2$.
+\item\emph{The computation} (Section~\ref{sec:run} and Appendix~\ref{app:integer}). For $m=5$ and $n=300$, integer tables with at most $15504$ grid states at each time satisfy these inequalities and give $V(300)\ge137704521264/2^{36}$ (Proposition~\ref{prop:cert300}).
+\item\emph{Monotonicity} (Appendix~\ref{app:mono}). Since $V(n)$ is nondecreasing \cite[Theorem~2]{BF93}, the bound holds for every $n\ge300$.
+\end{enumerate}
+The memory gives the relaxation the relative rank of the current value among the smallest values seen, and the charge keeps an exact lower bound on the cost of the values it forgets.
+
+\subsection*{The formal proof}
+Theorem~\ref{thm:main} is proved in Lean~4 with Mathlib, on definitions that repeat those above, from the general results of Sections~\ref{sec:relax} to~\ref{sec:cert} and Appendices~\ref{app:mono} and~\ref{app:integer}; the Lean kernel checks the tables of Proposition~\ref{prop:cert300} (Section~\ref{sec:formal}).
+
+Section~\ref{sec:proof} states the three results behind Theorem~\ref{thm:main} and proves the theorem, Sections~\ref{sec:relax} to~\ref{sec:run} prove the three results, Section~\ref{sec:formal} describes the formal proof and its data, and the appendices hold the model, the monotonicity and the bound in integer arithmetic.
+
+\section{The relaxation and the proof of Theorem~\ref{thm:main}}\label{sec:proof}
+
+This section defines the relaxed problem on which the proof rests, states the three results that Theorem~\ref{thm:main} is assembled from, and proves the theorem. Section~\ref{sec:relax} proves the first of them, Appendix~\ref{app:mono} the second, and Sections~\ref{sec:cert} and~\ref{sec:run} the third.
+
+\subsection{The relaxed problem}
+Fix integers $n\ge1$ and $m\ge0$. A \emph{memory} is a vector $y=(y_1,\dots,y_m)$ with $0\le y_1\le\dots\le y_m\le1$. For a memory $y$ and $x\in[0,1]$, let $\ins(y,x)$ be the memory formed by the $m$ smallest of the numbers $y_1,\dots,y_m,x$, in increasing order, and let $\drop(y,x)=\max(y_m,x)$ be the largest of them ($\drop(y,x)=x$ when $m=0$). For $1\le t\le n$ put
+\begin{equation}\label{eq:relaxed}
+S_t(y,x)=1+\#\{k: y_k<x\}+(n-t)\,x,\qquad \pi_t(y,x)=\bigl(1-\drop(y,x)\bigr)^{n-t}.
+\end{equation}
+
+These are the costs of a stopping problem in which the decision maker remembers only the $m$ smallest values seen so far, the memory starting at $(1,\dots,1)$. At time $t$, with memory $y$ and current value $x$, stopping costs $S_t(y,x)$: one for $x$ itself, one for each remembered value below $x$, and $(n-t)x$, the expected number of later values below $x$. Continuing replaces the memory by $\ins(y,x)$, and the value $d=\drop(y,x)$ leaves it. In Robbins' problem the value $d$ adds one to the final rank exactly when the value selected later is larger than $d$, which happens at least when the $n-t$ later values all exceed $d$, an event of probability $(1-d)^{n-t}$. The relaxed problem charges this probability, $\pi_t(y,x)$, when $d$ is forgotten, and nothing more. Without the penalty $\pi_t$ it is the truncated problem of Bruss and Ferguson \cite[(4.4) and (4.5)]{BF93}, whose stop cost counts the earlier smaller values up to $m$ and whose memory starts at $(1,\dots,1)$ as here. With $m=0$ the memory is empty, $S_t(y,x)=1+(n-t)x$, $\pi_t(y,x)=(1-x)^{n-t}$, and the relaxed problem is the recursion of Assaf and Samuel-Cahn \cite[(3.3)]{AS96}.
+
+\begin{definition}\label{def:relaxed}\lean{Robbins.RelaxedSubSolution}
+A \emph{relaxed sub-solution} for $(n,m)$ is a family $u_1,\dots,u_n$ of Borel functions on $\R^m$, each bounded on the set of memories, such that for every memory $y$
+\begin{align*}
+&\text{(R$_n$)}\quad u_n(y)\le\int_0^1 S_n(y,x)\,dx,\\
+&\text{(R$_t$)}\quad u_t(y)\le\int_0^1\min\bigl\{S_t(y,x),\ \pi_t(y,x)+u_{t+1}\bigl(\ins(y,x)\bigr)\bigr\}\,dx\qquad(1\le t<n).
+\end{align*}
+\end{definition}
+
+The inequalities (R$_n$) and (R$_t$) are those of backward induction for the relaxed problem, with $u_t(y)$ in place of its value at time $t$ and memory $y$. Only these inequalities are used, so no value function has to be computed exactly.
+
+\subsection{The three results}
+The proof of Theorem~\ref{thm:main} uses the relaxation to bound $V(300)$ from below, and monotonicity in $n$ to pass from $n=300$ to every larger $n$. The first result says that a relaxed sub-solution bounds Robbins' problem from below.
+
+\begin{theorem}\label{thm:relax}\lean{Robbins.RelaxedSubSolution.val_one_le_v, Robbins.le_v_of_verification, Robbins.card_lt_add_ite, Robbins.card_traj}
+Let $n\ge1$, $m\ge0$, and let $(u_t)$ be a relaxed sub-solution for $(n,m)$. Then $V(n)\ge u_1(1,\dots,1)$.
+\end{theorem}
+
+For $m=0$, Theorem~\ref{thm:relax} applied to the solution of (R$_n$) and (R$_t$) with equality is the lower bound of Assaf and Samuel-Cahn \cite[(3.3) and Theorem~3.3]{AS96}, from which they obtain $V>1.8502$. The memory recovers the relative rank of the current value among the values it holds, which the case $m=0$ ignores.
+
+The second result is the monotonicity of $V(n)$, due to Bruss and Ferguson \cite[Theorem~2]{BF93} and to Assaf and Samuel-Cahn \cite[Theorem~3.1]{AS96}. Appendix~\ref{app:mono} gives a proof by insertion of a maximum at a random position, which uses no conditional expectation.
+
+\begin{theorem}\label{thm:mono}\lean{Robbins.v_mono, Robbins.Rule.v_le_expectedRank}
+For every $n\ge1$, $V(n)\le V(n+1)$.
+\end{theorem}
+
+The third result is a relaxed sub-solution for $n=300$ and $m=5$, built in Section~\ref{sec:cert} from tables on finite grids and computed in Section~\ref{sec:run}.
+
+\begin{proposition}\label{prop:cert300}\lean{Robbins.relaxed300, Robbins.v300, Robbins.Cert.SO.K.relaxed_of_chainSO, Robbins.Cert.SO.K.checkStep_sound, Robbins.Cert.SO.K.checkLast_sound, Robbins.Cert.SO.L.checkStep_of_lanesRanges, Robbins.Cert.SO.L.checkStep_of_lanesParts}\computed{code/soq/src/bin/soq.rs, code/soq/out/soq-m5-n300-r1.3-w0.35-14.txt}
+For $n=300$ and $m=5$ there is a relaxed sub-solution $(u_t)$ with
+\[
+u_1(1,\dots,1)=\frac{137704521264}{2^{36}}.
+\]
+\end{proposition}
+
+\subsection{Proof of the main theorem}
+\begin{proof}[Proof of Theorem~\ref{thm:main}]
+Let $\beta=137704521264/2^{36}$. By Proposition~\ref{prop:cert300} and Theorem~\ref{thm:relax}, $V(300)\ge \beta$. By Theorem~\ref{thm:mono}, $V(n)\ge V(300)\ge \beta$ for every $n\ge300$. Since $V(n)$ is nondecreasing, $V=\lim V(n)=\sup_n V(n)\ge \beta$, and $\beta>2$ because $2\cdot2^{36}=137438953472<137704521264$. This is \decl{Robbins.main_so} in the formalization, for the bound on $V(n)$.
+\end{proof}
+
+\section{Proof of the relaxation theorem}\label{sec:relax}
+
+This section proves Theorem~\ref{thm:relax}. The proof compares, along every sequence of values, the relaxed costs with the true ones: a verification lemma reduces a lower bound on $V(n)$ to two pointwise inequalities (Lemma~\ref{lem:verif}), and an identity between the counts of the true and of the relaxed problem (Lemma~\ref{lem:traj}) gives the first of them. The integrals are Lebesgue integrals over cubes $[0,1]^k$, and the only tool of measure theory used is Fubini's theorem on these cubes.
+
+For $1\le t\le n$ and $h=(h_1,\dots,h_t)\in[0,1]^t$ let
+\[
+Z_t(h)=1+\#\{i<t: h_i<h_t\}+(n-t)\,h_t,
+\]
+the expected rank of $h_t$ given that the first $t$ values are $h$. The proof of Theorem~\ref{thm:relax} uses the following lemma with functions $L_t$ built from the relaxed sub-solution.
+
+\begin{lemma}\label{lem:verif}\lean{Robbins.le_v_of_verification, Robbins.Rule.expectedRank_ge_of_verification}
+Let $L_0$ be a number and, for $1\le t\le n$, let $L_t$ be a bounded Borel function on $[0,1]^t$, such that
+\begin{align*}
+&\text{(V1)}\quad L_t(h)\le Z_t(h)\quad\text{for } 1\le t\le n \text{ and } h\in[0,1]^t,\\
+&\text{(V2)}\quad L_{t-1}(h)\le\int_0^1 L_t(h,x)\,dx\quad\text{for } 1\le t\le n\text{ and } h\in[0,1]^{t-1}.
+\end{align*}
+Then $\E[R_D]\ge L_0$ for every rule $D$, and so $V(n)\ge L_0$.
+\end{lemma}
+
+\begin{proof}
+Fix a rule $D$, and we may take $D_n=[0,1]^n$. For $0\le t\le n$ and $h\in[0,1]^t$ let $Y_t(h)=\int_{[0,1]^{n-t}}R_D(h,z)\,dz$, so that $Y_n=R_D$, $Y_0=\E[R_D]$, and $Y_t(h)=\int_0^1Y_{t+1}(h,x)\,dx$ by Fubini's theorem. Let $\mathcal N_t$ be the set of $h\in[0,1]^t$ with $(h_1,\dots,h_s)\notin D_s$ for every $s\le t$; the set $\mathcal N_0$ is the single point $[0,1]^0$.
+
+First, for $h\in[0,1]^t$ and $1\le t\le n$,
+\begin{equation}\label{eq:stoppayoff}
+\int_{[0,1]^{n-t}}\Bigl(1+\#\{i<t:h_i<h_t\}+\#\{j\le n-t: z_j<h_t\}\Bigr)\,dz=Z_t(h),
+\end{equation}
+because $\int_{[0,1]^{n-t}}\one\{z_j<h_t\}\,dz=h_t$ for each $j$.
+
+We show $Y_t(h)\ge L_t(h)$ for $0\le t\le n-1$ and $h\in \mathcal N_t$, by backward induction on $t$. Fix such $t$ and $h$, let $x\in[0,1]$ and $h'=(h,x)$. If $h'\in D_{t+1}$, then, since $h\in \mathcal N_t$, the rule selects the value at time $t+1$ for every continuation $z$, so $R_D(h',z)=1+\#\{i\le t: h_i<x\}+\#\{j: z_j<x\}$, and by~\eqref{eq:stoppayoff} and (V1), $Y_{t+1}(h')=Z_{t+1}(h')\ge L_{t+1}(h')$. If $h'\notin D_{t+1}$, then $t+1<n$ and $h'\in \mathcal N_{t+1}$, so $Y_{t+1}(h')\ge L_{t+1}(h')$ by the induction hypothesis; for $t=n-1$ this case does not occur, which starts the induction. Hence $Y_t(h)=\int_0^1Y_{t+1}(h,x)\,dx\ge\int_0^1L_{t+1}(h,x)\,dx\ge L_t(h)$ by (V2). At $t=0$ this reads $\E[R_D]=Y_0\ge L_0$. This is \decl{Robbins.le_v_of_verification} in the formalization.
+\end{proof}
+
+The next two lemmas describe how a memory follows a sequence of values; the proof of Theorem~\ref{thm:relax} uses them to check (V1). For a memory $y$ and $x,z\in[0,1]$, the dropped value is the one that the memory loses, and the counts below $z$ are kept as follows.
+
+\begin{lemma}\label{lem:count}\lean{Robbins.card_lt_add_ite}
+For every memory $y$ and all $x,z\in[0,1]$,
+\[
+\#\{k: y_k<z\}+\one\{x<z\}=\#\{k:\ins(y,x)_k<z\}+\one\{\drop(y,x)<z\}.
+\]
+\end{lemma}
+
+\begin{proof}
+Let $\nu=\#\{k:y_k<z\}$; since $y$ is sorted, $y_k<z$ exactly when $k\le \nu$. Coordinate $k$ of $\ins(y,x)$ is $\max(y_{k-1},\min(y_k,x))$, with $y_0=0$. If $x\ge z$, then $\drop(y,x)\ge x\ge z$, and $\ins(y,x)_k<z$ exactly when $y_k<z$, so both sides equal $\nu$. If $x<z$, the left side is $\nu+1$; $\ins(y,x)_k<z$ exactly when $y_{k-1}<z$, that is when $k\le \nu+1$, so $\#\{k:\ins(y,x)_k<z\}=\min(m,\nu+1)$, and $\drop(y,x)<z$ exactly when $y_m<z$, that is when $\nu=m$. Both cases give $\nu+1$. This is \decl{Robbins.card_lt_add_ite} in the formalization.
+\end{proof}
+
+For a sequence of values $x_1,x_2,\dots$ in $[0,1]$ put $y^{(0)}=(1,\dots,1)$, and for $t\ge1$
+\[
+y^{(t)}=\ins\bigl(y^{(t-1)},x_t\bigr),\qquad d_t=\drop\bigl(y^{(t-1)},x_t\bigr).
+\]
+The memory $y^{(t)}$ holds the $m$ smallest of $x_1,\dots,x_t$ and $m$ ones, and $d_1,\dots,d_t$ are the other values of this list.
+
+\begin{lemma}\label{lem:traj}\lean{Robbins.card_traj}
+For every $t\ge0$ and every $z\in[0,1]$,
+\[
+\#\{i\le t: x_i<z\}=\#\{k: y^{(t)}_k<z\}+\#\{s\le t: d_s<z\}.
+\]
+\end{lemma}
+
+\begin{proof}
+By induction on $t$ with Lemma~\ref{lem:count}. At $t=0$ both sides are $0$, since $1<z$ fails for $z\le1$. This is \decl{Robbins.card_traj} in the formalization.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:relax}]
+We apply Lemma~\ref{lem:verif}. For $1\le t\le n$ and $h=(x_1,\dots,x_t)\in[0,1]^t$, write $y=y^{(t-1)}$, and let
+\[
+\Phi_t(h)=\sum_{s<t}\one\{x_{s'}>d_s\text{ for } s<s'\le t\}\,(1-d_s)^{n-t}.
+\]
+The term of $s$ is the conditional probability, given $x_1,\dots,x_t$, that every value after time $s$ exceeds $d_s$; the drops $d_s$, $s<t$, depend only on $x_1,\dots,x_{t-1}$. Put $L_0=u_1(1,\dots,1)$,
+\begin{align*}
+L_t(h)&=\min\bigl\{S_t(y,x_t),\ \pi_t(y,x_t)+u_{t+1}\bigl(\ins(y,x_t)\bigr)\bigr\}+\Phi_t(h)\qquad(1\le t<n),\\
+L_n(h)&=S_n(y,x_n)+\Phi_n(h).
+\end{align*}
+These functions are bounded and Borel, because $\ins$ and $\drop$ are continuous, the counts and indicators are Borel, and each $u_t$ is Borel and bounded on memories.
+
+(V1). Each term of $\Phi_t$ is at most $\one\{x_t>d_s\}$, since its indicator contains the condition $x_t>d_s$ and $0\le(1-d_s)^{n-t}\le1$. By Lemma~\ref{lem:traj} at time $t-1$ with $z=x_t$,
+\[
+S_t(y,x_t)+\sum_{s<t}\one\{d_s<x_t\}=1+\#\{i<t:x_i<x_t\}+(n-t)x_t=Z_t(h).
+\]
+So $L_t(h)\le S_t(y,x_t)+\Phi_t(h)\le Z_t(h)$.
+
+(V2) at $t=1$. Here $\Phi_1=0$ and $y^{(0)}=(1,\dots,1)$, so $\int_0^1L_1(x)\,dx$ is the right side of (R$_1$), or of (R$_n$) if $n=1$, at the memory $(1,\dots,1)$, and it is at least $u_1(1,\dots,1)=L_0$.
+
+(V2) at $t\ge2$. Fix $h=(x_1,\dots,x_{t-1})$, let $y'=y^{(t-2)}$, so that $y=y^{(t-1)}=\ins(y',x_{t-1})$. Bounding the minimum in $L_{t-1}$ by its second term,
+\[
+L_{t-1}(h)\le\pi_{t-1}(y',x_{t-1})+u_t(y)+\Phi_{t-1}(h)=u_t(y)+\sum_{s\le t-1}\one\{x_{s'}>d_s\text{ for }s<s'\le t-1\}\,(1-d_s)^{n-t+1},
+\]
+since $\pi_{t-1}(y',x_{t-1})=(1-d_{t-1})^{n-t+1}$ is the term of $s=t-1$, whose condition is empty. On the other side, the numbers $d_s$, $s\le t-1$, do not depend on the new value $x$, so
+\begin{align*}
+\int_0^1L_t(h,x)\,dx={}&\int_0^1\min\bigl\{S_t(y,x),\ \pi_t(y,x)+u_{t+1}(\ins(y,x))\bigr\}\,dx\\
+&+\sum_{s\le t-1}\one\{x_{s'}>d_s\text{ for }s<s'\le t-1\}\,(1-d_s)^{n-t}\int_0^1\one\{x>d_s\}\,dx,
+\end{align*}
+where for $t=n$ the first integral is $\int_0^1S_n(y,x)\,dx$. The first term is at least $u_t(y)$ by (R$_t$), or (R$_n$), and the second is the sum above, since $\int_0^1\one\{x>d\}\,dx=1-d$. So $L_{t-1}(h)\le\int_0^1L_t(h,x)\,dx$, and Lemma~\ref{lem:verif} gives $V(n)\ge u_1(1,\dots,1)$. This is \decl{Robbins.RelaxedSubSolution.val_one_le_v} in the formalization.
+\end{proof}
+
+In the proof, the only inequality besides (R$_n$) and (R$_t$) is the bound of the minimum in $L_{t-1}$ by its continuation term, which is where the decision maker of the relaxed problem goes on. The penalty of a drop is paid in advance, at the time of the drop, and it is the probability, computed at that time, of an event that keeps the dropped value below the value selected later.
+
+\section{Certificates with values and slopes}\label{sec:cert}
+
+This section builds relaxed sub-solutions from finite tables and gives a condition on the tables, one inequality for each grid state and each value of a few discrete parameters, under which they define one (Theorem~\ref{thm:sound}). Throughout, $n\ge2$ and $m\ge1$.
+
+\subsection{Grids}\label{sec:grids}
+The data are points $0<\gamma_0<\gamma_1<\dots<\gamma_{J-1}<1$, a window length $K\ge1$, and integers $0\le j_1\le j_2\le\dots\le j_n$. The grid of time $t$ is
+\[
+G_t=\{\gamma_j: j_t\le j<j_t+K,\ j<J\}\cup\{1\},
+\]
+which we assume to contain a point below $1$; let $\bar g_t$ be the largest such point. The \emph{box} of a point $g\in G_t$ is $(g^-,g]$, where $g^-$ is the previous point of $G_t$, and $[0,g]$ if $g$ is the smallest point. The boxes partition $[0,1]$, and for $z\in[0,1]$ we write $\ceil{z}{t}$ for the point of $G_t$ whose box contains $z$, the least point of $G_t$ that is at least $z$. Applied coordinatewise to a memory $y$, this gives a memory $\ceil{y}{t}$ with coordinates in $G_t$; such memories are the \emph{grid states} of time $t$. A coordinate $k$ of a grid state $g$ is a \emph{window coordinate} if $g_k<1$, and \emph{forgotten} if $g_k=1$: the grid of time $t$ no longer distinguishes the values of $(\bar g_t,1]$.
+
+The windows move up with $t$, and the one property of them that the proofs use is the following.
+
+\begin{lemma}\label{lem:W}\lean{Robbins.Cert.Grid.so_propW}
+For $1\le t<n$, every point of $G_{t+1}$ that is at most $\bar g_t$ belongs to $G_t$.
+\end{lemma}
+
+\begin{proof}
+A point $\gamma_j$ of $G_{t+1}$ has $j\ge j_{t+1}\ge j_t$. If $\gamma_j\le\bar g_t=\gamma_{j'}$, where $j'$ is the largest index of the window of $G_t$, then $j\le j'<j_t+K$, so $\gamma_j\in G_t$. This is \decl{Robbins.Cert.Grid.so_propW} in the formalization.
+\end{proof}
+
+\subsection{The certificate function}
+A \emph{table} of time $t$ gives, for each grid state $g$ of time $t$, a number $\hat u_t(g)$ and nonnegative numbers $\sigma_t(g)_1,\dots,\sigma_t(g)_m$, with $\sigma_t(g)_k=0$ when $g_k=1$. The \emph{certificate function} of the tables is
+\begin{equation}\label{eq:certfun}
+u_t(y)=\hat u_t(g)+\sum_{k=1}^m\sigma_t(g)_k\,(g_k-y_k),\qquad g=\ceil{y}{t},
+\end{equation}
+for every $y\in\R^m$, where for $z\notin[0,1]$ we put $\ceil{z}{t}$ equal to the smallest point of $G_t$ if $z<0$ and to $1$ if $z>1$. Only the values at memories enter (R$_n$) and (R$_t$). On each box of grid states it is affine, with value $\hat u_t(g)$ at the corner $g$ and slope $-\sigma_t(g)_k$ in the coordinate $k$; the numbers $\delta_k=g_k-y_k\ge0$ are the \emph{deviations} of $y$ from its corner.
+
+The simplest certificate is constant on boxes, $u_t(y)=\hat u_t(\ceil{y}{t})$. When the tables are nonincreasing in each coordinate, it is enough to check (R$_t$) at grid states, since rounding the memory up only lowers the right side of (R$_t$); but at a memory $y$ such a certificate takes the value of the corner $\ceil{y}{t}$, and it loses at each time an amount of the order of the width of the boxes. The slopes in~\eqref{eq:certfun} remove this first-order loss. The price is that the right side of (R$_t$) is not affine in $y$, so it can no longer be checked at the corners alone: the check has to bound it from below on the whole box by a function affine in the deviations. The slopes are nonnegative because this bound reads $u_{t+1}$ from below term by term; no monotonicity of the tables is needed.
+
+\subsection{The idea of the bound}
+Fix a time $t<n$, a grid state $g$ of time $t$, and a memory $y$ with $\ceil{y}{t}=g$. The right side of (R$_t$) is an integral over the current value $x$. We cut $[0,1]$ into \emph{cells}, the intervals between consecutive points of $G_t\cup G_{t+1}$, and on each cell we bound the integrand from below by a function of $x$ plus a linear form in the deviations with nonnegative coefficients. Four facts give the bound.
+\begin{enumerate}[label=(\roman*)]
+\item\emph{Clean cells.} On a cell that contains no coordinate of $y$, the stop cost $S_t(y,x)$ is an affine function $A(x)$ that does not depend on the deviations, and the continuation cost $\pi_t(y,x)+u_{t+1}(\ins(y,x))$ is at least $B(x)+s$, where $B$ is affine in $x$ and $s=\sum_k\kappa_k\delta_k$ has coefficients $\kappa_k\ge0$: the penalty by convexity of $z\mapsto(1-z)^{n-t}$, and $u_{t+1}$ because $\ins(y,x)$ stays in one box of time $t+1$, on which $u_{t+1}$ is affine with nonnegative slopes.
+\item\emph{Chords.} The integrand is then at least $\min\{A,B+s\}$, a concave function of $s$ on the interval $[0,\bar s]$ of the values that $s$ takes on the box. It lies above its chord, $\min\{A,B\}+s\min\{1,(A-B)^+/\bar s\}$, which is linear in the deviations.
+\item\emph{Own cells.} On the cell of some coordinates of $y$, those of them below $x$ add one each to the stop cost and change nothing else. This adds $\min\{N(x),(B-A)^+\}$, with $N(x)$ the number of these coordinates below $x$, and the integral of this term over the cell is linear in their deviations.
+\item\emph{Forgotten coordinates.} When the window of $G_{t+1}$ moves above $\bar g_t$, the box $(\bar g_t,1]$ of the forgotten coordinates is cut into several cells. The bound is computed for each placement of the forgotten coordinates in these cells, and the tables are bounded by every one of them.
+\end{enumerate}
+Integrating over the cells gives a lower bound $T+\sum_k\mu_k\delta_k$ on the whole box, which the table entries $\hat u_t(g)$ and $\sigma_t(g)_k$ may then take (Theorem~\ref{thm:sound}).
+
+\subsection{The bound of one state}\label{sec:bound}
+Fix $1\le t<n$ and put $r=n-t$. Let $0=p_0<p_1<\dots<p_I=1$ be the points of $G_t\cup G_{t+1}$ and $0$, and let the cells be $C_1=[0,p_1]$ and $C_i=(p_{i-1},p_i]$ for $2\le i\le I$. They partition $[0,1]$, and the bound uses three facts about them.
+
+\begin{lemma}\label{lem:cells}\lean{Robbins.Cert.SO.recList_ok, Robbins.Cert.SO.fits_choice}
+\begin{enumerate}[label=(\alph*)]
+\item The box of each point $g<1$ of $G_t$ is a cell.
+\item The map $z\mapsto\ceil{z}{t+1}$ is constant on each cell $C_i$; we write $p_i^+$ for its value, the least point of $G_{t+1}$ that is at least $p_i$.
+\item The cells contained in $(\bar g_t,1]$ partition it, and the upper end of each of them is a point of $G_{t+1}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(a) A point of $G_{t+1}$ strictly inside the box of $g$ would be smaller than $g\le\bar g_t$, hence in $G_t$ by Lemma~\ref{lem:W}, which is impossible; so no point of $G_t\cup G_{t+1}$ lies strictly inside the box. (b) No point of $G_{t+1}$ lies in $[0,p_1)$ or in $(p_{i-1},p_i)$. (c) The points of $G_t\cup G_{t+1}$ above $\bar g_t$ are $1$ and the points of $G_{t+1}$ in $(\bar g_t,1)$. This is \decl{Robbins.Cert.SO.recList_ok} in the formalization, for the record lists that these facts give.
+\end{proof}
+
+\emph{Choices and anchors.} Let $g$ be a grid state of time $t$, and let its forgotten coordinates be the last $f$ ones. A \emph{choice} for $g$ assigns to each forgotten coordinate a cell contained in $(\bar g_t,1]$, nondecreasing in the coordinate. For a choice $c$, each coordinate $k$ has a cell $C_{i_k}$: the box of $g_k$ if $g_k<1$ (a cell by Lemma~\ref{lem:cells}(a)), the chosen cell otherwise. So $i_1\le\dots\le i_m$. The \emph{anchor} of $k$ is the upper end $a_k=p_{i_k}$ of its cell, so $a_k=g_k$ for a window coordinate; its rounded anchor is $a_k^+=\ceil{a_k}{t+1}$, and $e_k=a_k^+-a_k\ge0$ is the excess, which is $0$ for a forgotten coordinate by Lemma~\ref{lem:cells}(c). For a window coordinate $k$, $w_k$ is the width of the box of $g_k$. A memory $y$ \emph{fits} $(g,c)$ if $y_k\in C_{i_k}$ for every $k$; then $0\le\delta_k\le w_k$ for each window coordinate $k$. Every memory $y$ with $\ceil{y}{t}=g$ fits $(g,c)$ for the choice $c$ given by the cells of its forgotten coordinates, which is nondecreasing since $y$ is sorted.
+
+\emph{Penalty tables.} The bound uses numbers $E_s(z)$ and $\hat E_s(z)$, for $0\le s\le n$ and $z\in\{\gamma_0,\dots,\gamma_{J-1},1\}$, such that
+\begin{equation}\label{eq:Etables}
+0\le E_s(z)\le(1-z)^{n-s}\le\hat E_s(z).
+\end{equation}
+In exact arithmetic both are the power itself; Appendix~\ref{app:integer} rounds them.
+
+\emph{The cells up to the top coordinate.} Let $i\le i_m$, and let $b_i$ be the number of $k\le m-1$ with $i_k<i$. Let $H_i$ be the grid state of time $t+1$ formed by $a_1^+,\dots,a_{m-1}^+$ and $p_i^+$; in increasing order it is $(a_1^+,\dots,a_{b_i}^+,p_i^+,a_{b_i+1}^+,\dots,a_{m-1}^+)$, because $a_k^+\le p_i^+$ when $i_k<i$ and $a_k^+\ge p_i^+$ when $i_k\ge i$. Write $\sigma'=\sigma_{t+1}(H_i)$, let $\theta_i=\sigma'_{b_i+1}$ be the slope at the position of $p_i^+$, and for $k\le m-1$ let $\eta_{i,k}=\sigma'_k$ if $i_k<i$ and $\eta_{i,k}=\sigma'_{k+1}$ if $i_k\ge i$. Put
+\begin{align*}
+A_i(x)&=1+b_i+r\,x,\\
+B_i(x)&=E_t(a_m)+\hat u_{t+1}(H_i)+\theta_i\,(p_i^+-x)+\sum_{k\le m-1}\eta_{i,k}\,e_k,
+\end{align*}
+and give coordinate $k$ the coefficient $\kappa_{i,k}=\eta_{i,k}$ if $k\le m-1$ is a window coordinate with $i_k\ne i$, $\kappa_{i,m}=r\,E_{t+1}(a_m)$ if $i<i_m$ and $m$ is a window coordinate, and $\kappa_{i,k}=0$ otherwise.
+
+\emph{The cells above the top coordinate.} Let $H^0=(a_1^+,\dots,a_m^+)$, a grid state of time $t+1$, let $\kappa^0_k=\sigma_{t+1}(H^0)_k$ for a window coordinate $k$ and $\kappa^0_k=0$ otherwise, and $U=\hat u_{t+1}(H^0)+\sum_k\sigma_{t+1}(H^0)_k\,e_k$. For $i>i_m$ put $\kappa_{i,k}=\kappa^0_k$ and
+\begin{align*}
+A_i(x)&=1+m+r\,x,\\
+B_i(x)&=E_t(p_i)+r\,E_{t+1}(p_i)\,(p_i-x)+U.
+\end{align*}
+Let $\bar s^0=\sum_k\kappa^0_kw_k$, the sum over the window coordinates, and let $i^*$ be the least $j$ with $i_m\le j<I$ and $1+m+r\,p_j\ge\hat E_t(p_j)+U+\bar s^0$, and $i^*=I$ if there is none.
+
+\emph{The bound.} For $i\le i^*$ let $\bar s_i=\sum_k\kappa_{i,k}w_k$, the sum over the window coordinates, let $M_i=\max\{0,B_i(p_i)-A_i(p_i)\}$, and
+\[
+q_i(x)=\min\Bigl\{1,\frac{\max\{0,A_i(x)-B_i(x)\}}{\bar s_i}\Bigr\}\quad\text{if } \bar s_i>0,\qquad q_i=0\quad\text{if } \bar s_i=0.
+\]
+For a window coordinate $k$, let $\ell_k$ be the number of $k'<k$ with $i_{k'}=i_k$, and $\lambda_k=\min\{\ell_k+1,M_{i_k}\}-\min\{\ell_k,M_{i_k}\}$. The bound of $(g,c)$ is the number
+\begin{equation}\label{eq:T}
+T(g,c)=\sum_{i=1}^{i^*}\int_{C_i}\min\{A_i(x),B_i(x)\}\,dx+\frac{E_{t-1}(p_{i^*})}{r+1}+(1-p_{i^*})\,U,
+\end{equation}
+with the slopes, for each window coordinate $k$,
+\begin{equation}\label{eq:mu}
+\mu_k(g,c)=\lambda_k+\sum_{i=1}^{i^*}\kappa_{i,k}\int_{C_i}q_i(x)\,dx+\kappa^0_k\,(1-p_{i^*}).
+\end{equation}
+When $i^*=I$ the last two terms of~\eqref{eq:T} and the last term of~\eqref{eq:mu} vanish, since $E_{t-1}(1)=0$ by~\eqref{eq:Etables}. The three parts of $T$ are the cells handled by facts (i) to (iii), the tail cells where the penalty $(1-x)^r$ is replaced by its tangent at the upper end of the cell, and the interval $(p_{i^*},1]$, on which the stop cost exceeds the lower bound $(1-x)^r+U+s$ of the continuation cost and that bound is integrated exactly. The three parts of $\mu_k$ are the own cell, the chords and that last interval.
+
+\subsection{Soundness}
+The theorem below is what the computation of Section~\ref{sec:run} uses: tables bounded state by state by $T$ and $\mu$ give a relaxed sub-solution.
+
+\begin{theorem}\label{thm:sound}\lean{Robbins.Cert.SO.relaxed_of_tables}
+Let grids be as in Section~\ref{sec:grids}, let numbers $E_s(z)$ and $\hat E_s(z)$ satisfy~\eqref{eq:Etables}, and let tables of times $1,\dots,n$ be such that
+\begin{enumerate}[label=(\roman*)]
+\item for every grid state $g$ of time $n$, $\hat u_n(g)\le 1+m-\sum_kg_k$ and $\sigma_n(g)_k\le1$ for every $k$;
+\item for every $t<n$, every grid state $g$ of time $t$ and every choice $c$ for $g$, $\hat u_t(g)\le T(g,c)$ and $\sigma_t(g)_k\le\mu_k(g,c)$ for every window coordinate $k$.
+\end{enumerate}
+Then the certificate functions~\eqref{eq:certfun} form a relaxed sub-solution for $(n,m)$.
+\end{theorem}
+
+The proof rests on three lemmas. The first is the elementary inequality behind facts (ii) and (iii); it is applied at each $x$ with $A$ the stop cost without the own coordinates, $N$ their number below $x$, $B'$ the continuation cost and $B+s$ its lower bound.
+
+\begin{lemma}\label{lem:scalar}\lean{Robbins.Cert.SO.scalar_min, Robbins.Cert.SO.scalar_min0}
+Let $A,B,B',N,s,\bar s$ be real numbers with $N\ge0$, $0\le s\le\bar s$ and $B'\ge B+s$, and let $q=\min\{1,\max\{0,A-B\}/\bar s\}$ if $\bar s>0$ and $q=0$ if $\bar s=0$. Then
+\[
+\min\{A+N,B'\}\ \ge\ \min\{A,B\}+s\,q+\min\bigl\{N,\max\{0,B-A\}\bigr\}.
+\]
+\end{lemma}
+
+\begin{proof}
+If $B\ge A$, then $q=0$ and $\min\{A+N,B'\}\ge\min\{A+N,B\}=A+\min\{N,B-A\}$. If $B<A$, the last term vanishes and $\min\{A+N,B'\}\ge\min\{A,B+s\}=B+\min\{A-B,s\}$; for $\bar s=0$ this is at least $B$, and for $\bar s>0$, $\min\{A-B,s\}\ge s\min\{1,(A-B)/\bar s\}$ because $s\le\bar s$. This is \decl{Robbins.Cert.SO.scalar_min} in the formalization, for $\bar s>0$.
+\end{proof}
+
+The second lemma gives facts (i) and (iii) at a single value $x$: the stop cost and a lower bound of the continuation cost, on the cells up to the top coordinate and on the cells above it.
+
+\begin{lemma}\label{lem:cellbound}\lean{Robbins.Cert.SO.cont_ge_cell, Robbins.Cert.SO.relaxStop_cell, Robbins.Cert.SO.drop_ge_cell, Robbins.Cert.SO.ceilR_ins_cell, Robbins.Cert.SO.relaxStop_tail, Robbins.Cert.SO.cont_tail}
+Let $y$ fit $(g,c)$, and let $s_i(y)=\sum_k\kappa_{i,k}\delta_k$, the sum over the window coordinates, so that $0\le s_i(y)\le \bar s_i$.
+\begin{enumerate}[label=(\alph*)]
+\item If $x\in C_i$ with $i\le i_m$, then $S_t(y,x)=A_i(x)+N_i(x)$, where $N_i(x)$ is the number of $k$ with $i_k=i$ and $y_k<x$, and
+\[
+\pi_t(y,x)+u_{t+1}\bigl(\ins(y,x)\bigr)\ \ge\ B_i(x)+s_i(y).
+\]
+\item If $x\in C_i$ with $i>i_m$, then $S_t(y,x)=A_i(x)$ and $\pi_t(y,x)+u_{t+1}(\ins(y,x))\ge(1-x)^r+U+s_i(y)$, and the right side is at least $B_i(x)+s_i(y)$ when $i\le i^*$.
+\item If $i^*<I$ and $x>p_{i^*}$, then $\min\{S_t(y,x),\pi_t(y,x)+u_{t+1}(\ins(y,x))\}\ge(1-x)^r+U+s^0(y)$, where $s^0(y)=\sum_k\kappa^0_k\delta_k\le \bar s^0$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(a) The stop cost. A coordinate $k$ with $i_k<i$ satisfies $y_k\le p_{i_k}\le p_{i-1}<x$, and one with $i_k>i$ satisfies $y_k>p_{i_k-1}\ge p_i\ge x$. Coordinate $m$ has $i_m\ge i$, so the coordinates below $x$ are the $b_i$ coordinates $k\le m-1$ with $i_k<i$ and the $N_i(x)$ coordinates of $C_i$ below $x$.
+
+The penalty. If $i<i_m$, then $x\le p_i<y_m$, so $\drop(y,x)=y_m$, and by convexity of $z\mapsto(1-z)^r$ and~\eqref{eq:Etables},
+\[
+\pi_t(y,x)=(1-y_m)^r\ge(1-a_m)^r+r(1-a_m)^{r-1}(a_m-y_m)\ge E_t(a_m)+r\,E_{t+1}(a_m)\,(a_m-y_m),
+\]
+which is $E_t(a_m)+\kappa_{i,m}\delta_m$ if $m$ is a window coordinate, and at least $E_t(a_m)$ otherwise. If $i=i_m$, then $\drop(y,x)=\max(y_m,x)\le a_m$ and $\pi_t(y,x)\ge E_t(a_m)$.
+
+The continuation. Let $y'=\ins(y,x)$. Since $\ceil{\cdot}{t+1}$ is nondecreasing, the rounded values of the $m$ smallest of $y_1,\dots,y_m,x$ are the $m$ smallest of their rounded values, which are $a_1^+,\dots,a_m^+$ and $p_i^+$ by Lemma~\ref{lem:cells}(b). If $i<i_m$, the value left out is $y_m$; if $i=i_m$, it is $y_m$ or $x$, whose rounded values are both $a_m^+=p_i^+$. In both cases $\ceil{y'}{t+1}=H_i$, so
+\[
+u_{t+1}(y')=\hat u_{t+1}(H_i)+\sum_{l=1}^m\sigma'_l\,\bigl((H_i)_l-y'_l\bigr),
+\]
+and every term of the sum is nonnegative. The coordinates of $y'$ are, in order: the $y_k$ with $i_k<i$, which are $y_1,\dots,y_{b_i}$; then the values of $y'$ in $C_i$, namely $x$ and the $y_k$ with $i_k=i$, less the one left out when $i=i_m$; then the $y_k$ with $i_k>i$ and $k\le m-1$, at the positions $k+1$. For $l=k\le b_i$ and for $l=k+1$ with $i_k>i$, the term is $\eta_{i,k}(a_k^+-y_k)=\eta_{i,k}(e_k+a_k-y_k)$, which is $\eta_{i,k}e_k+\kappa_{i,k}\delta_k$ for a window coordinate and at least $\eta_{i,k}e_k$ for a forgotten one. The values of $y'$ in $C_i$ occupy the positions $b_i+1,\dots$, where $H_i$ equals $p_i^+$. The first of them is the smallest of these values, which is at most $x$, so its term is at least $\theta_i(p_i^+-x)$. The other ones are the positions $k+1$ of the coordinates $k\le m-1$ with $i_k=i$, and they hold values at most $p_i$, so their terms are at least $\eta_{i,k}(p_i^+-p_i)=\eta_{i,k}e_k$, with $\kappa_{i,k}=0$. Adding the penalty gives (a).
+
+(b) Here $i_m<I$, since $C_i$ lies above $C_{i_m}$, and $x>p_{i_m}=a_m\ge y_m$, so all $m$ coordinates are below $x$, $\ins(y,x)=y$, $\drop(y,x)=x$ and $\pi_t(y,x)=(1-x)^r$. By Lemma~\ref{lem:cells}(b), $\ceil{y}{t+1}=H^0$, so $u_{t+1}(y)=\hat u_{t+1}(H^0)+\sum_k\sigma_{t+1}(H^0)_k(e_k+a_k-y_k)\ge U+s_i(y)$. For $x\le p_i$, the tangent at $p_i$ gives $(1-x)^r\ge(1-p_i)^r+r(1-p_i)^{r-1}(p_i-x)\ge E_t(p_i)+rE_{t+1}(p_i)(p_i-x)$.
+
+(c) The function $x\mapsto1+m+rx-(1-x)^r$ is nondecreasing on $[0,1]$, and at $p_{i^*}$ it is at least $1+m+rp_{i^*}-\hat E_t(p_{i^*})\ge U+\bar s^0$ by the choice of $i^*$. A value $x>p_{i^*}$ lies in a cell above $C_{i_m}$, so $S_t(y,x)=1+m+rx\ge(1-x)^r+U+\bar s^0\ge(1-x)^r+U+s^0(y)$, and the continuation cost is at least $(1-x)^r+U+s^0(y)$ by (b). This is \decl{Robbins.Cert.SO.cont_ge_cell} in the formalization, for the continuation cost in~(a).
+\end{proof}
+
+The third lemma integrates the own-cell term of Lemma~\ref{lem:scalar} over a cell.
+
+\begin{lemma}\label{lem:owncell}\lean{Robbins.Cert.SO.integral_min_count}
+Let $y_{k_0}\le y_{k_1}\le\dots$ be the coordinates of $y$ in a cell $C_i$, listed by increasing $k$, and $M\ge0$. Then
+\[
+\int_{C_i}\min\bigl\{N_i(x),M\bigr\}\,dx=\sum_{\ell}\bigl(\min\{\ell+1,M\}-\min\{\ell,M\}\bigr)\,(p_i-y_{k_\ell}).
+\]
+\end{lemma}
+
+\begin{proof}
+For $x\in C_i$, $N_i(x)>\ell$ exactly when $y_{k_\ell}<x$, because the $y_{k_\ell}$ increase with $\ell$. Summing $\min\{N,M\}=\sum_{\ell<N}(\min\{\ell+1,M\}-\min\{\ell,M\})$ over the cell, the term of $\ell$ is integrated over $\{x\in C_i:x>y_{k_\ell}\}$, of length $p_i-y_{k_\ell}$. This is \decl{Robbins.Cert.SO.integral_min_count} in the formalization.
+\end{proof}
+
+The three lemmas give the bound for one choice, from which Theorem~\ref{thm:sound} follows.
+
+\begin{proposition}\label{prop:onechoice}\lean{Robbins.Cert.SO.bound_le_integral, Robbins.Cert.SO.head_cell, Robbins.Cert.SO.tail_cell, Robbins.Cert.SO.final_seg, Robbins.Cert.SO.cell_int_le}
+If $y$ fits $(g,c)$, then
+\[
+\int_0^1\min\bigl\{S_t(y,x),\ \pi_t(y,x)+u_{t+1}(\ins(y,x))\bigr\}\,dx\ \ge\ T(g,c)+\sum_k\mu_k(g,c)\,\delta_k,
+\]
+the sum over the window coordinates.
+\end{proposition}
+
+\begin{proof}
+Split $[0,1]$ into the cells $C_1,\dots,C_{i^*}$ and $(p_{i^*},1]$. On $C_i$ with $i\le i^*$, Lemma~\ref{lem:cellbound} gives $S_t=A_i+N_i$, with $N_i=0$ for $i>i_m$, and a continuation cost at least $B_i+s_i(y)$; Lemma~\ref{lem:scalar}, with $s=s_i(y)$ and $\bar s=\bar s_i$, bounds the integrand from below by
+\[
+\min\{A_i(x),B_i(x)\}+s_i(y)\,q_i(x)+\min\{N_i(x),M_i\},
+\]
+because $B_i-A_i$ is nonincreasing in $x$, so that $\max\{0,B_i(x)-A_i(x)\}\ge M_i$ on $C_i$. The integral of the middle term is $\sum_k\kappa_{i,k}\delta_k\int_{C_i}q_i$. By Lemma~\ref{lem:owncell} with $M=M_i$, the integral of the last term is at least $\sum\lambda_k\delta_k$ over the window coordinates $k$ of $C_i$, since $p_i-y_k=\delta_k$ for those and $p_i-y_k\ge0$ for the others; the window and the forgotten coordinates do not share a cell. On $(p_{i^*},1]$, Lemma~\ref{lem:cellbound}(c) gives the integrand at least $(1-x)^r+U+s^0(y)$, whose integral is
+\[
+\frac{(1-p_{i^*})^{r+1}}{r+1}+(1-p_{i^*})\bigl(U+s^0(y)\bigr)\ \ge\ \frac{E_{t-1}(p_{i^*})}{r+1}+(1-p_{i^*})\,U+\sum_k\kappa^0_k\,(1-p_{i^*})\,\delta_k
+\]
+by~\eqref{eq:Etables} with $n-(t-1)=r+1$. Adding up gives $T(g,c)+\sum_k\mu_k(g,c)\delta_k$. This is \decl{Robbins.Cert.SO.bound_le_integral} in the formalization, with the integers $T^{\mathbb Z}(g,c)/Q$ and $\mu^{\mathbb Z}_k(g,c)/Q$ of Appendix~\ref{app:integer} in place of $T(g,c)$ and $\mu_k(g,c)$.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:sound}]
+Let $y$ be a memory and $g=\ceil{y}{t}$.
+
+(R$_n$). With $f$ the number of forgotten coordinates, (i) and $\delta_k\ge0$ give
+\[
+u_n(y)\le1+m-\sum_kg_k+\sum_{g_k<1}(g_k-y_k)=1+\sum_{g_k<1}(1-y_k)\le1+\sum_k(1-y_k)=\int_0^1S_n(y,x)\,dx.
+\]
+
+(R$_t$) for $t<n$. Let $c$ be the choice given by the cells of the forgotten coordinates of $y$, so that $y$ fits $(g,c)$. By Proposition~\ref{prop:onechoice} and (ii), the right side of (R$_t$) is at least $T(g,c)+\sum_k\mu_k(g,c)\delta_k\ge\hat u_t(g)+\sum_k\sigma_t(g)_k\delta_k=u_t(y)$, since $\sigma_t(g)_k=0$ for the forgotten coordinates.
+
+Each $u_t$ is a finite sum, over the grid states $g$, of the indicator of the set $\{y:\ceil{y}{t}=g\}$, a product of intervals, times an affine function; so it is Borel and bounded on memories. This is \decl{Robbins.Cert.SO.relaxed_of_tables} in the formalization, for integer tables bounded by the integer form of $T$ and $\mu$.
+\end{proof}
+
+\section{\texorpdfstring{The certificate for $n=300$}{The certificate for n=300}}\label{sec:run}
+
+This section proves Proposition~\ref{prop:cert300} by computing tables that satisfy the hypotheses of Theorem~\ref{thm:sound} in the integer form of Corollary~\ref{cor:integer}.
+
+\subsection{The grids}\label{sec:grids300}\computed{code/soq/out/grid-m5-n300-r1.3-w0.35-14.txt, code/gp/numbers.gp, code/gp/numbers.out}
+Let $n=300$, $Q=2^{36}$, $m=5$ and $\rho=1.3$. The points are $\gamma_j=P_j/Q$, $0\le j<J$, where $J=26$ is the number of $j$ with $0.35\,\rho^j<n$, and the integer $P_j$ is the integer part of $Q\cdot0.35\,\rho^j/n$ computed in floating point. The window length is $K=15$, and the window of time $t$ starts at $j_t$, the integer part of $\ln\bigl(n/(n-t+1)\bigr)/\ln\rho$ computed in floating point. The integers $P_j$ and $j_t$ are data of the certificate, listed in the repository. The proof uses only the conditions of Section~\ref{sec:grids} on them: the $P_j$ increase in $(0,Q)$, the $j_t$ do not decrease, and each $G_t$ has a point below $1$, which holds because $j_t\le j_n<J$.
+
+At time $t$ the $n-t+1$ values not yet shown include the current one, and the smallest of them are of order $1/(n-t+1)$. The window of $G_t$ is a geometric grid of ratio $\rho$ that covers, in the unit $1/(n-t+1)$, the values from about $0.35$ to about $0.35\,\rho^{K-1}\approx14$. A smaller value of the memory is rounded up to the first point of the window, and a larger one is forgotten. A grid state is a sorted $5$-tuple of points of $G_t$, which has at most $K+1=16$ points, so there are at most $\binom{20}{5}=15504$ grid states at each time.
+
+\subsection{The tables}\label{sec:tables}\computed{code/soq/src/bin/soq.rs, code/soq/out/soq-m5-n300-r1.3-w0.35-14.txt, code/gp/numbers.gp, code/gp/numbers.out}
+The tables are integers $\hat u^{\mathbb Z}_t(g)$ and $\sigma^{\mathbb Z}_t(g)_k$, the numerators over $Q$ of the tables of Section~\ref{sec:cert}, computed backward in $t$. At time $n$, $\hat u^{\mathbb Z}_n(g)=(m+1)Q-\sum_kQg_k$, and $\sigma^{\mathbb Z}_n(g)_k=Q$ for the window coordinates and $0$ for the forgotten ones. At each time $t<n$ and each grid state $g$, $\hat u^{\mathbb Z}_t(g)$ is the least of the integers $T^{\mathbb Z}(g,c)$ of Appendix~\ref{app:integer} over the choices $c$ for $g$, and $\sigma^{\mathbb Z}_t(g)_k$ the least of the integers $\mu^{\mathbb Z}_k(g,c)$; there is one choice when $g$ has no forgotten coordinate or no point of $G_{t+1}$ lies in $(\bar g_t,1)$, and several otherwise. All the entries are nonnegative integers, and the formal proof takes them as natural numbers.
+
+\begin{proof}[Proof of Proposition~\ref{prop:cert300}]
+The tables cover the $299$ times $t<n$ with $4539713$ grid states in all, and the entry of time $1$ at the state $(1,\dots,1)$ is $\hat u^{\mathbb Z}_1(1,\dots,1)=137704521264$. The Lean kernel checks that the tables satisfy the hypotheses of Corollary~\ref{cor:integer}: at time $n$, and at every time $t<n$ for every grid state and every choice. By Corollary~\ref{cor:integer} the certificate functions form a relaxed sub-solution for $(300,5)$, and at the memory $(1,\dots,1)$, whose coordinates are all forgotten, $u_1(1,\dots,1)=\hat u^{\mathbb Z}_1(1,\dots,1)/Q=137704521264/2^{36}$. This is \decl{Robbins.relaxed300} in the formalization.
+\end{proof}
+
+\section{The formal proof and its data}\label{sec:formal}
+
+This section describes how the proof is checked: what the formal proof proves and what it trusts, and which programs wrote the data it checks.
+
+\subsection{The formal proof}\label{sec:formal-lean}\computed{code/formal-proof/main_axioms.lean, .github/workflows/ci.yml, config.json}
+The formal proof \cite{RobbinsLean} is a development in Lean~4 \cite{Lean4} with Mathlib \cite{Mathlib20}, in the versions of Section~\ref{sec:formal-soft}. Its definitions are those of Section~\ref{sec:intro}: the law of the values is the product of $n$ copies of the uniform law on $[0,1]$; a rule is a family of measurable sets of histories, and it stops at the first time whose history lies in its set, and at time $n$ if there is none; the rank of the selected value is one plus the number of values below it; and $V(n)$ is the infimum of the expected rank over all rules. The formal proof states Theorem~\ref{thm:main} as two theorems: $137704521264/2^{36}\le V(n)$ for every $n\ge300$, and the same bound for every limit of the sequence $V(n)$. The first has no hypothesis, and the second assumes only that its number is a limit of the sequence; both depend on the three standard axioms of Lean and Mathlib, propositional extensionality, the axiom of choice and the soundness of quotients, and on no other axiom. The Lean kernel checks each declaration of the development when it is compiled. The program nanoda \cite{nanoda}, an implementation of the Lean kernel written separately, checks again the two theorems and the three other theorems of the file that states them (the bound on $V(300)$, the inequality $V(n)>2$ for every $n\ge300$, and the relaxed sub-solution of Proposition~\ref{prop:cert300}), with every declaration they depend on, those of Mathlib and of the finite verification included: $59335$ declarations, with no error. Comparator \cite{Comparator}, with nanoda as its kernel, checks the theorems behind Theorems~\ref{thm:relax} and~\ref{thm:mono}, Proposition~\ref{prop:model} and the passage from $V(300)$ to every $n\ge300$ and to the limit: they prove statements written on a copy, made by a program, of the definitions of the formal statement and of Definition~\ref{def:relaxed}, in a file that imports only Mathlib, with no axiom other than the three above. It also checks, against a file that copies the definitions of the formal statement and imports only Mathlib, four theorems of the formal proof of Theorem~\ref{thm:main}: the bound on $V(300)$, the two theorems that state Theorem~\ref{thm:main}, and the inequality $V(n)>2$ for every $n\ge300$, again with no axiom other than the three standard ones. The continuous integration of the repository runs Comparator on all these theorems together, and on the theorem of Proposition~\ref{prop:cert300}, against one file that imports only Mathlib.
+
+The finite verification of Proposition~\ref{prop:cert300} is checked by the Lean kernel. For each time $t<300$ it is a Boolean function of the tables of times $t$ and $t+1$ that the kernel evaluates to true, together with a lemma proved in Lean that says what this value means: hypothesis~(ii) of Corollary~\ref{cor:integer} at time $t$, for every grid state and every choice; at time $300$ it is a function of the last table and means hypothesis~(i). The function computes the integers $T^{\mathbb Z}(g,c)$ and $\mu^{\mathbb Z}_k(g,c)$ of Appendix~\ref{app:integer} in a reorganized order, which shares among the grid states with the same first coordinates the parts of the bound that depend only on them. At the $280$ times $t$ with $G_{t+1}=G_t$, a second function treats at once the grid states with the same largest coordinate, packed into the bits of one integer, and a lemma proved in Lean says that it returns true only when the first function does. The check is split into $4837$ theorems: at the $19$ times $t<300$ with $G_{t+1}\ne G_t$, each is on a range of grid states; at the $280$ other times, each is on the grid states of a range of values of the largest coordinate, or, when one value has too many of them, on a window of these states; and one is on time $300$. The kernel also checks that the theorems of each time cover all its grid states, and a theorem proved in Lean chains them into the relaxed sub-solution of Proposition~\ref{prop:cert300}. No proof of the development evaluates a function by compiled code: every evaluation is done by the kernel.
+
+The written proofs follow the route and the lemma cuts of the formal proof, with one difference: the formal proof states the soundness theorem directly in the integer form of Corollary~\ref{cor:integer}, so that Proposition~\ref{prop:onechoice} and Proposition~\ref{prop:integer} form one step of its proof, and Theorem~\ref{thm:sound} is proved for integer tables. It describes a choice by the list of the cells of the coordinates, each with its anchor and its width, as in Section~\ref{sec:bound}. The last sentence of each formalized proof names the main declaration behind it; where the formal proof splits a statement into parts, it names the declaration of one part and says which, and the repository lists the others.
+
+\subsection{The data of the checks}\label{sec:formal-data}\computed{code/soq/src/bin/soq.rs, code/soq/out/soq-m5-n300-r1.3-w0.35-14.txt}
+The tables that the kernel checks were written by \texttt{soq}, a Rust program run outside the proof, which computes the integers of Section~\ref{sec:tables} with checked integer arithmetic. A script turns them into the Lean modules of the check. The proof of Theorem~\ref{thm:main} trusts neither program, since the kernel checks what they write.
+
+\subsection{Software and hardware}\label{sec:formal-soft}\computed{.github/workflows/ci.yml, code/soq/out/tables.sha256}
+The tables were computed with Rust~1.101 (nightly of 2026-10-01), and the formal proof was checked with Lean~4.34.1 and Mathlib~v4.34.1, on one machine with an AMD Ryzen~9 5900X processor ($12$ cores, $24$ threads) and $64$~GB of memory. The program \texttt{soq} computes the tables in a few seconds. The Lean kernel checks the $4837$ theorems of the finite verification in about five hours of compilation in all, each with at most $2.6$~GB of memory, and nanoda checks these five theorems again in $55$ minutes on four threads, with less than $9.1$~GB of memory. Comparator, with nanoda on four threads, checks the four theorems of Section~\ref{sec:formal-lean} in $81$ minutes, the build in its sandbox included, with less than $12$~GB of memory. The repository pins Rust~1.98.1 for its two programs: with it, \texttt{soq} writes the same grid file and the same $300$ tables, byte for byte, and the script writes the same Lean modules, up to the comment lines that name the script. The repository \url{\repo} contains the Lean development, the program that wrote the tables, the script that turns them into Lean modules, and the \TeX{} source of this paper.
+
+\appendix
+\section{\texorpdfstring{The model and the monotonicity of $V(n)$}{The model and the monotonicity of V(n)}}\label{app:mono}
+
+\subsection{The model}
+The next proposition says that the infimum $V(n)$ of Section~\ref{sec:intro} is the usual value of Robbins' problem: the infimum over all stopping times, with ties counted either way.
+
+\begin{proposition}\label{prop:model}\lean{Robbins.robbinsValue_eq_v}
+For every $n\ge1$, the infimum of $\E\bigl[1+\#\{X_i:X_i<X_\tau\}\bigr]$ over all stopping times $\tau$ of the filtration of $X_1,\dots,X_t$, where the set $\{X_i:X_i<X_\tau\}$ counts each value once, is $V(n)$.
+\end{proposition}
+
+\begin{proof}
+A rule gives the stopping time $\tau$ above. For a stopping time $\tau$, the event $\{\tau=t\}$ belongs to the $\sigma$-algebra generated by $X_1,\dots,X_t$, so it is $\{(X_1,\dots,X_t)\in D_t\}$ for a Borel set $D_t$; replacing $D_t$ by $D_t\setminus\bigcup_{s<t}(D_s\times[0,1]^{t-s})$ changes nothing, and $\tau$ is the time of the rule $(D_t)$. Both ranks agree when the values are distinct, which holds almost surely. This is \decl{Robbins.robbinsValue_eq_v} in the formalization.
+\end{proof}
+
+\subsection{Monotonicity}
+The idea is that of Bruss and Ferguson \cite[Theorem~2]{BF93}: a decision maker facing $n+1$ values who is told the largest of them from the start does at least as well as one who is not, and, given the largest value, the other $n$ values are independent and uniform below it. Assaf and Samuel-Cahn \cite[Theorems~2.4 and~3.1]{AS96} tell the decision maker its position and its size. We carry it out without conditional expectations: the largest value is inserted, at its position and with its size, into a sequence of $n$ values scaled below it, and each position and size gives a rule for $n$ values.
+
+\begin{proof}[Proof of Theorem~\ref{thm:mono}]
+For a rule $D$, write $R_D(x)$ for the rank of the value it selects from the sequence $x$, so that $\E[R_D]$ is the integral of $R_D$ over the cube. Fix a rule $D=(D_1,\dots,D_{n+1})$ for $n+1$ values; we show $\int_{[0,1]^{n+1}}R_D\ge V(n)$.
+
+\emph{Position of the maximum.} For $1\le k\le n+1$ let $\mathcal A_k$ be the set of $x\in[0,1]^{n+1}$ whose first largest coordinate is $x_k$: $x_i<x_k$ for $i<k$ and $x_i\le x_k$ for $i>k$. These Borel sets partition $[0,1]^{n+1}$, so $\int R_D=\sum_k\int_{\mathcal A_k}R_D$.
+
+\emph{Coordinates.} Fix $k$, and write $x=\iota_k(\omega,z)$ for the sequence with $x_k=\omega$ and the other coordinates $z\in[0,1]^n$, in order. By Fubini's theorem, $\int_{\mathcal A_k}R_D=\int_0^1F_k(\omega)\,d\omega$ with
+\[
+F_k(\omega)=\int_{\mathcal Q_k(\omega)}R_D\bigl(\iota_k(\omega,z)\bigr)\,dz,\qquad \mathcal Q_k(\omega)=\{z\in[0,1]^n: z_i<\omega\text{ for }i<k,\ z_i\le \omega\text{ for }i\ge k\}.
+\]
+
+\emph{Scaling.} For $\omega\in(0,1]$ the substitution $z=\omega v$ gives $F_k(\omega)=\omega^n\int_{\mathcal Q_k(1)}R_D(\iota_k(\omega,\omega v))\,dv$, and $[0,1]^n\setminus \mathcal Q_k(1)$ is contained in the null set where some $v_i=1$. So $F_k(\omega)=\omega^n\int_{[0,1)^n}R_D(\iota_k(\omega,\omega v))\,dv$.
+
+\emph{A rule for $n$ values.} Fix $\omega\in(0,1]$ and $k$, and define a rule $D'=(D'_1,\dots,D'_n)$ for $n$ values by
+\begin{itemize}
+\item $v\in D'_i$ if $(\omega v_1,\dots,\omega v_i)\in D_i$, for $i<\min(k,n)$;
+\item $v\in D'_i$ if $(\omega v_1,\dots,\omega v_{k-1},\omega)\in D_k$ or $(\omega v_1,\dots,\omega v_{k-1},\omega,\omega v_k,\dots,\omega v_i)\in D_{i+1}$, for $k\le i\le n-1$;
+\item $D'_n=[0,1]^n$.
+\end{itemize}
+The sets $D'_i$ are Borel. The rule $D'$ runs $D$ on the sequence $\iota_k(\omega,\omega v)$, which has the largest value $\omega$ at position $k$, and when $D$ would select that value it selects the next one instead.
+
+\emph{Comparison.} Let $v\in[0,1)^n$, $x=\iota_k(\omega,\omega v)$, and let $\tau$ and $\tau'$ be the times at which $D$ stops on $x$ and $D'$ stops on $v$. If $\tau<k$, then $\tau'=\tau$, the selected values are $\omega v_\tau$ and $v_\tau$, and $\omega>\omega v_\tau$, so $R_D(x)=1+\#\{i\ne\tau:\omega v_i<\omega v_\tau\}=R_{D'}(v)$. If $\tau=k$, every other coordinate of $x$ is below $\omega$, so $R_D(x)=n+1>R_{D'}(v)$. If $\tau>k$, then $(\omega v_1,\dots,\omega v_{k-1},\omega)\notin D_k$, so $\tau'=\tau-1$, the selected value is $x_\tau=\omega v_{\tau'}<\omega$, and $R_D(x)=R_{D'}(v)$ as in the first case. So $R_D(x)\ge R_{D'}(v)$.
+
+\emph{Conclusion.} For $\omega\in(0,1]$, $\int_{[0,1)^n}R_D(\iota_k(\omega,\omega v))\,dv\ge\int_{[0,1]^n}R_{D'}\ge V(n)$, hence $F_k(\omega)\ge \omega^nV(n)$, and
+\[
+\int_{[0,1]^{n+1}}R_D=\sum_{k=1}^{n+1}\int_0^1F_k(\omega)\,d\omega\ \ge\ (n+1)\,V(n)\int_0^1\omega^n\,d\omega=V(n).
+\]
+The rule $D'$ depends on $(\omega,k)$, but the bound is used for each $(\omega,k)$ separately, so no measurability in $(\omega,k)$ is needed. Taking the infimum over $D$ gives $V(n+1)\ge V(n)$. This is \decl{Robbins.v_mono} in the formalization.
+\end{proof}
+
+\section{The bound in integer arithmetic}\label{app:integer}
+
+The tables of Section~\ref{sec:run} are integers. This appendix gives the integer form of the bound $T(g,c)$ and of the slopes $\mu_k(g,c)$ of Section~\ref{sec:bound}, shows that it lies below them (Proposition~\ref{prop:integer}), and states the form of Theorem~\ref{thm:sound} that the computation uses (Corollary~\ref{cor:integer}).
+
+Fix an integer $Q\ge1$, and let the points of Section~\ref{sec:grids} be $\gamma_j=P_j/Q$ with integers $0<P_0<\dots<P_{J-1}<Q$; put $P_J=Q$, the numerator of the point $1$. Every point of the grids and every cell end $p_i$ is then a number $\xi/Q$ with $\xi$ an integer, and we write $\xi=Qx$ throughout.
+
+\emph{Penalty tables.} Let $E_n[j]=Q$ and $E_s[j]=\lfloor E_{s+1}[j]\,(Q-P_j)/Q\rfloor$ for $s<n$ and $0\le j\le J$. The first lemma shows that these integers give numbers that satisfy~\eqref{eq:Etables}.
+
+\begin{lemma}\label{lem:Epen}\lean{Robbins.Cert.SO.Epen_le, Robbins.Cert.SO.le_Epen_add}
+For $0\le s\le n$ and $0\le j\le J$, $E_s[j]\le Q(1-\gamma_j)^{n-s}\le E_s[j]+(n-s)$, with $\gamma_J=1$.
+\end{lemma}
+
+\begin{proof}
+Both by induction on $n-s$. If $E_{s+1}[j]\le Q(1-\gamma_j)^{n-s-1}$, then $E_s[j]\le E_{s+1}[j](1-\gamma_j)\le Q(1-\gamma_j)^{n-s}$. If $Q(1-\gamma_j)^{n-s-1}\le E_{s+1}[j]+n-s-1$, then $Q(1-\gamma_j)^{n-s}\le E_{s+1}[j](1-\gamma_j)+n-s-1<E_s[j]+1+n-s-1$. This is \decl{Robbins.Cert.SO.Epen_le} in the formalization, for the first inequality.
+\end{proof}
+
+So the numbers $E_s(\gamma_j)=E_s[j]/Q$ and $\hat E_s(\gamma_j)=(E_s[j]+n-s)/Q$ satisfy~\eqref{eq:Etables}, and from now on $T$ and $\mu$ are computed with them. For integer tables $\hat u^{\mathbb Z}_t(g)$ and $\sigma^{\mathbb Z}_t(g)_k$, the numerators over $Q$ of the tables $\hat u_t$ and $\sigma_t$, the functions $Q^2A_i$ and $Q^2B_i$ of Section~\ref{sec:bound} are affine in $\xi$ with integer coefficients, and the numbers $Q^2\bar s_i$, $Q^2\bar s^0$ and $Q^2U$ are integers.
+
+\emph{Two integrals.} The bound of a cell needs the integral of a minimum of two affine functions and the integral of a chord, and the next lemma bounds both from below in integers. Let $\phi(\xi)=\phi_0+\phi_1\xi$ and $\psi(\xi)=\psi_0-\psi_1\xi$ with integers $\phi_0$, $\phi_1>0$, $\psi_0$, $\psi_1\ge0$, and let $P_a<P_b$ be integers. The difference $\Delta=\phi-\psi$ is affine with slope $\Delta'=\phi_1+\psi_1>0$. Write $\mathcal I_\phi(\xi_0,\xi_1)=2\phi_0(\xi_1-\xi_0)+\phi_1(\xi_1^2-\xi_0^2)$ and $\mathcal I_\psi(\xi_0,\xi_1)=2\psi_0(\xi_1-\xi_0)-\psi_1(\xi_1^2-\xi_0^2)$ for twice the integrals of $\phi$ and $\psi$ over $[\xi_0,\xi_1]$. The cell integral is
+\[
+\operatorname{cell}(P_a,P_b;\phi,\psi)=\begin{cases}\mathcal I_\phi(P_a,P_b)&\text{if }\Delta(P_b)\le0,\\ \mathcal I_\psi(P_a,P_b)&\text{if }\Delta(P_a)\ge0,\\ \mathcal I_\phi(P_a,\zeta)+\mathcal I_\psi(\zeta,P_b)-2\Delta'&\text{otherwise, with }\zeta=P_a+\lfloor-\Delta(P_a)/\Delta'\rfloor.\end{cases}
+\]
+For an integer $\varepsilon$, let $\underline{\mathcal L}(\varepsilon)=\overline{\mathcal L}(\varepsilon)=0$ if $\Delta(P_b)\le\varepsilon$, let $\underline{\mathcal L}(\varepsilon)=\overline{\mathcal L}(\varepsilon)=(\Delta(P_a)+\Delta(P_b)-2\varepsilon)(P_b-P_a)$ if $\Delta(P_a)\ge\varepsilon$, and otherwise, with $\zeta_\varepsilon=P_a+\lfloor(\varepsilon-\Delta(P_a))/\Delta'\rfloor$,
+\[
+\underline{\mathcal L}(\varepsilon)=\bigl(\Delta(\zeta_\varepsilon+1)+\Delta(P_b)-2\varepsilon\bigr)(P_b-\zeta_\varepsilon-1),\qquad\overline{\mathcal L}(\varepsilon)=\bigl(\Delta(\zeta_\varepsilon)+\Delta(P_b)-2\varepsilon\bigr)(P_b-\zeta_\varepsilon)+2\Delta'.
+\]
+For an integer $\bar s>0$, the chord integral is $\operatorname{chord}(P_a,P_b;\phi,\psi;\bar s)=0$ if $\Delta(P_b)\le0$, $P_b-P_a$ if $\Delta(P_a)\ge\bar s$, and otherwise $\max\{0,\lfloor(\underline{\mathcal L}(0)-\overline{\mathcal L}(\bar s))/(2\bar s)\rfloor\}$.
+
+\begin{lemma}\label{lem:intint}\lean{Robbins.Cert.SO.cell2_le, Robbins.Cert.SO.pos2_fst_le, Robbins.Cert.SO.le_pos2_snd, Robbins.Cert.SO.chord_le}
+\[
+\operatorname{cell}(P_a,P_b;\phi,\psi)\le2\int_{P_a}^{P_b}\min\{\phi,\psi\}\,d\xi,\qquad \operatorname{chord}(P_a,P_b;\phi,\psi;\bar s)\le\int_{P_a}^{P_b}\min\Bigl\{1,\frac{\max\{0,\Delta\}}{\bar s}\Bigr\}\,d\xi.
+\]
+\end{lemma}
+
+\begin{proof}
+The cell integral. In the first two cases one function is the minimum on the whole interval and the bound is an equality. Otherwise $\Delta(P_a)<0<\Delta(P_b)$, the zero $\xi^*$ of $\Delta$ lies in $(P_a,P_b)$, and $\zeta=\lfloor\xi^*\rfloor$ satisfies $P_a\le\zeta\le P_b-1$. The minimum is $\phi$ on $[P_a,\zeta]$ and $\psi$ on $[\zeta+1,P_b]$, and on $[\zeta,\zeta+1]$ it is $\psi+\min\{0,\Delta\}\ge\psi-\Delta'$, since $\Delta\ge-\Delta'$ there.
+
+The chord integral. For every $\varepsilon$, $\underline{\mathcal L}(\varepsilon)\le2\int_{P_a}^{P_b}\max\{0,\Delta-\varepsilon\}\,d\xi\le\overline{\mathcal L}(\varepsilon)$: the first two cases are exact; otherwise $\Delta-\varepsilon\ge0$ on $[\zeta_\varepsilon+1,P_b]$, where its integral is the lower bound, and $\max\{0,\Delta-\varepsilon\}$ is $0$ below $\zeta_\varepsilon$, at most $\Delta-\varepsilon+\Delta'$ on $[\zeta_\varepsilon,\zeta_\varepsilon+1]$ and $\Delta-\varepsilon$ above. Since $\min\{1,\max\{0,\Delta\}/\bar s\}=(\max\{0,\Delta\}-\max\{0,\Delta-\bar s\})/\bar s$, the integral of the chord is at least $(\underline{\mathcal L}(0)-\overline{\mathcal L}(\bar s))/(2\bar s)$, and it is nonnegative; the cases $\Delta(P_b)\le0$ and $\Delta(P_a)\ge\bar s$ are exact. This is \decl{Robbins.Cert.SO.cell2_le} in the formalization, for the cell integral.
+\end{proof}
+
+\emph{The integer bound.} Fix $t<n$, a grid state $g$ and a choice $c$, and write $\bar p_i=Qp_i$ for the integer numerators of the cell ends. Put
+\begin{align*}
+\mathcal R&=\sum_{i=1}^{i^*}\operatorname{cell}\bigl(\bar p_{i-1},\bar p_i;Q^2A_i,Q^2B_i\bigr)+\Bigl\lfloor\frac{2Q^2E_{t-1}[j^*]}{r+1}\Bigr\rfloor+2(Q-\bar p_{i^*})\,Q^2U,\\
+T^{\mathbb Z}(g,c)&=\bigl\lfloor\mathcal R/(2Q^2)\bigr\rfloor,
+\end{align*}
+where $j^*$ is the index of the point $p_{i^*}$ and the last two terms are omitted when $i^*=I$. For a window coordinate $k$, let $\chi_i=\operatorname{chord}(\bar p_{i-1},\bar p_i;Q^2A_i,Q^2B_i;Q^2\bar s_i)$ when $\bar s_i>0$ and $\chi_i=0$ otherwise, let $\mathcal M_i=\lfloor\max\{0,Q^2(B_i-A_i)(p_i)\}/Q\rfloor$, and
+\[
+\mu^{\mathbb Z}_k(g,c)=\min\{(\ell_k+1)Q,\mathcal M_{i_k}\}-\min\{\ell_kQ,\mathcal M_{i_k}\}+\Bigl\lfloor\frac1Q\Bigl(\sum_{i=1}^{i^*}Q\kappa_{i,k}\,\chi_i+Q\kappa^0_k\,(Q-\bar p_{i^*})\Bigr)\Bigr\rfloor;
+\]
+put $\mu^{\mathbb Z}_k(g,c)=0$ for a forgotten coordinate. Every quantity here is an integer, and the index $i^*$ is decided by the integer inequality $(1+m)Q^2+rQ\bar p_j\ge Q(E_t[j']+r)+Q^2U+Q^2\bar s^0$, with $j'$ the index of the point $p_j$. The next proposition compares these integers with the bound of Section~\ref{sec:bound}.
+
+\begin{proposition}\label{prop:integer}\lean{Robbins.Cert.SO.cell2_div_le, Robbins.Cert.SO.chord_div_le, Robbins.Cert.SO.MC_le_aux}
+For every $t<n$, grid state $g$, choice $c$ and window coordinate $k$, $T^{\mathbb Z}(g,c)\le Q\,T(g,c)$ and $\mu^{\mathbb Z}_k(g,c)\le Q\,\mu_k(g,c)$.
+\end{proposition}
+
+\begin{proof}
+The hypotheses of Lemma~\ref{lem:intint} hold on each cell: in the variable $\xi$, $Q^2A_i$ has slope $rQ>0$, and $Q^2B_i$ has slope $-Q\theta_i$ if $i\le i_m$ and $-r E_{t+1}[j]$ if $i>i_m$, with $j$ the index of $p_i$, two integers at most $0$; the ends satisfy $\bar p_{i-1}<\bar p_i$; and $Q^2\bar s_i$ is a positive integer when $\chi_i$ uses it. With $\xi=Qx$, $\int_{C_i}\min\{A_i,B_i\}\,dx=Q^{-3}\int_{\bar p_{i-1}}^{\bar p_i}\min\{Q^2A_i,Q^2B_i\}\,d\xi$, so Lemma~\ref{lem:intint} bounds each cell term of $\mathcal R/(2Q^3)$ by the matching term of $T$; the last two terms of $\mathcal R/(2Q^3)$ are at most those of $T$, and the floors only lower the result. For the slopes, $\mathcal M_{i}/Q\le M_{i}$ and $z\mapsto\min\{\ell+1,z\}-\min\{\ell,z\}$ is nondecreasing, so the first part of $\mu^{\mathbb Z}_k$ is at most $Q\lambda_k$; by Lemma~\ref{lem:intint}, $\chi_i\le Q\int_{C_i}q_i\,dx$, and $\kappa_{i,k}\ge0$, so the second part is at most $Q\sum_i\kappa_{i,k}\int_{C_i}q_i+Q\kappa^0_k(1-p_{i^*})$. This is \decl{Robbins.Cert.SO.cell2_div_le} in the formalization, for the cell terms; the formal proof compares the units cell by cell, inside the proof of Proposition~\ref{prop:onechoice}.
+\end{proof}
+
+With Theorem~\ref{thm:sound}, this gives the statement that the computation uses.
+
+\begin{corollary}\label{cor:integer}\lean{Robbins.Cert.SO.le_v_of_tables, Robbins.Cert.SO.relaxed_of_tables}
+Let the grids be as above and let $\hat u^{\mathbb Z}_t(g)$ and $\sigma^{\mathbb Z}_t(g)_k$ be nonnegative integers, $1\le t\le n$, such that
+\begin{enumerate}[label=(\roman*)]
+\item for every grid state $g$ of time $n$, $\hat u^{\mathbb Z}_n(g)+\sum_kQg_k\le(m+1)Q$, and $\sigma^{\mathbb Z}_n(g)_k\le Q$ for the window coordinates and $\sigma^{\mathbb Z}_n(g)_k=0$ for the forgotten ones;
+\item for every $t<n$, every grid state $g$ of time $t$ and every choice $c$ for $g$, $\hat u^{\mathbb Z}_t(g)\le T^{\mathbb Z}(g,c)$ and $\sigma^{\mathbb Z}_t(g)_k\le\mu^{\mathbb Z}_k(g,c)$ for every $k$.
+\end{enumerate}
+Then the certificate functions of the tables $\hat u_t=\hat u^{\mathbb Z}_t/Q$ and $\sigma_t=\sigma^{\mathbb Z}_t/Q$ form a relaxed sub-solution for $(n,m)$, and $V(n)\ge\hat u^{\mathbb Z}_1(1,\dots,1)/Q$.
+\end{corollary}
+
+\begin{proof}
+For a forgotten coordinate $k$, (ii) gives $\sigma^{\mathbb Z}_t(g)_k\le0$, so the tables are tables in the sense of Section~\ref{sec:cert}. By Proposition~\ref{prop:integer}, (i) and (ii) imply hypotheses (i) and (ii) of Theorem~\ref{thm:sound}, which gives the relaxed sub-solution; Theorem~\ref{thm:relax} gives the bound, since the coordinates of $(1,\dots,1)$ are forgotten and $u_1(1,\dots,1)=\hat u_1(1,\dots,1)$. This is \decl{Robbins.Cert.SO.le_v_of_tables} in the formalization.
+\end{proof}
+
+\section*{Contact}
+Questions, corrections and comments are welcome as issues on the repository: \url{\repo/issues/new/choose}.
+
+\bibliographystyle{abbrvnat}
+\bibliography{refs}
+
+\end{document}

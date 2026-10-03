@@ -1,0 +1,10 @@
+# args 300 5 1.3 1 0.35 14
+soq n=300 m=5 rho=1.3 q=1 wmin=0.35 wmax=14 K=15 J=26 SH=36
+state_steps=4539713 max_states_per_step=15504
+per state step: inner cells 13.671, tail tangent cells 0.003, chords 13.667, table lookups 14.430, exact tails 0.759; shift corner evaluations 53295
+cell cases per state step: stop-only 5.699, continuation-only 7.407, crossing 0.569; chord cases: zero 5.696, full 7.127, ramp 0.845, no credited slope 0.007; corner evaluations with a stop-only cell above a continuation cell: 0
+max slope numerator 12591111934027 (2^43.52), max value numerator 419157996790 (2^38.61)
+uhat_1(1..1) = 137704521264 / 2^36
+value=2.003864520
+certified_gt_2=true
+# exit status 0
