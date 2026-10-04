@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "label": "Lean Comparator",
-  "message": "failed",
-  "color": "red",
+  "message": "statement checked · nanoda",
+  "color": "brightgreen",
   "style": "flat"
 }
