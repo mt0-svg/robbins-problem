@@ -6,7 +6,8 @@ authors:
   - name: mt0-svg
 repository-code: "https://github.com/mt0-svg/robbins-problem"
 license: Apache-2.0
-version: v1.0.0
+version: v1.1.0
+date-released: 2026-11-13
 doi: 10.5281/zenodo.23124501
 keywords:
   - Robbins' problem

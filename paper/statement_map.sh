@@ -2,11 +2,11 @@
 # Writes the table "From the paper to the proof" of STATEMENTS.md from paper/main.tex, with the numbers of
 # paper/main.aux (build the paper first). Each numbered statement, and each section that carries one, has next to its
 # \label two macros that print nothing:
-#   \lean{A, B, ...}      its Lean declarations, full names; the first is the one its proof names;
+#   \lean{A, B, ...}      its Lean declarations, full names; those its proof names come first;
 #   \computed{p, q, ...}  scripts and recorded outputs, paths from the root of the repository.
 # A statement with no \lean is "not formalized" in the table. Checks: every declaration is declared in Robbins/
 # (namespaces followed; a structure field counts; not Robbins/Challenge.lean, which repeats the statements), every
-# path exists, every \decl{N} of the text sits in a proof and is the first entry of the \lean macro of the statement
+# path exists, every \decl{N} of the text sits in a proof and is an entry of the \lean macro of the statement
 # it proves, and the first entry of every theorem, lemma, proposition and corollary is named by a \decl. Exits 1 if a
 # check fails, and with --check also if STATEMENTS.md differs. The axioms of the declarations are checked by CI
 # (code/formal-proof/main_axioms.lean).
@@ -52,7 +52,7 @@ sed -n 's/^\\newlabel{\([^}]*\)}{{\([^}]*\)}.*/\1\t\2/p' "$aux" > "$t/numbers.ts
 awk '
   function arg(m,   s) { if (!match($0, "\\\\" m "\\{[^}]*\\}")) return ""; s = substr($0, RSTART + length(m) + 2, RLENGTH - length(m) - 3); gsub(/[[:space:]]+/, "", s); return s }
   function warg(   s) { if (!match($0, /\\leanwait\{[^}]*\}/)) return ""; return substr($0, RSTART + 10, RLENGTH - 11) }
-  /\\begin\{(theorem|lemma|proposition|corollary|conjecture|remark|claim)\}/ {
+  /\\begin\{(theorem|lemma|proposition|corollary|definition|conjecture|remark|claim)\}/ {
     match($0, /\\begin\{[a-z]+\}/); kind = substr($0, RSTART + 7, RLENGTH - 8)
     if (!match($0, /\\label\{[^}]*\}/)) { print "unlabelled " kind " at line " NR > "/dev/stderr"; bad = 1; next }
     print kind US substr($0, RSTART + 7, RLENGTH - 8) US arg("lean") US arg("computed") US warg(); next
@@ -65,8 +65,8 @@ awk '
 sed -n '/^\\begin{document}/,$p' "$t/body.tex" | grep -o '\\decl{[^}]*}' | sed 's/^\\decl{\(.*\)}$/\1/' | sort > "$t/named.txt" || true
 
 # Checks on the names.
-awk -F$'\x1f' '$3 != "" { split($3, a, ","); print a[1] }' "$t/rows.tsv" | sort > "$t/firsts.txt"
-while read -r n; do grep -qxF "$n" "$t/firsts.txt" || { echo "FAIL \\decl{$n} is not the first entry of a \\lean macro" >&2; fail=1; }; done < "$t/named.txt"
+awk -F$'\x1f' '$3 != "" { n = split($3, a, ","); for (i = 1; i <= n; i++) print a[i] }' "$t/rows.tsv" | sort > "$t/entries.txt"
+while read -r n; do grep -qxF "$n" "$t/entries.txt" || { echo "FAIL \\decl{$n} is not an entry of a \\lean macro" >&2; fail=1; }; done < "$t/named.txt"
 dup=$(uniq -d "$t/named.txt"); [[ -z $dup ]] || { echo "FAIL named by more than one \\decl: $dup" >&2; fail=1; }
 while IFS=$'\x1f' read -r kind label lean comp wait; do
   case $kind in theorem|lemma|proposition|corollary)
@@ -78,20 +78,21 @@ done < "$t/rows.tsv"
 # statement just before, or the one of "\begin{proof}[Proof of ...\ref{label}]".
 sed -n '/^\\begin{document}/,$p' "$t/body.tex" | awk '
   function arg(m,   s) { if (!match($0, "\\\\" m "\\{[^}]*\\}")) return ""; s = substr($0, RSTART + length(m) + 2, RLENGTH - length(m) - 3); gsub(/[[:space:]]+/, "", s); return s }
-  /\\begin\{(theorem|lemma|proposition|corollary|conjecture|remark|claim)\}/ && match($0, /\\label\{[^}]*\}/) {
-    cur = substr($0, RSTART + 7, RLENGTH - 8); s = arg("lean"); sub(/,.*/, "", s); first[cur] = s
+  /\\begin\{(theorem|lemma|proposition|corollary|definition|conjecture|remark|claim)\}/ && match($0, /\\label\{[^}]*\}/) {
+    cur = substr($0, RSTART + 7, RLENGTH - 8); s = arg("lean"); all[cur] = "," s ","
   }
   /\\begin\{proof\}/ { inproof = 1; target = cur; if (match($0, /^\\begin\{proof\}\[[^]]*\\ref\{[^}]*\}/)) { s = substr($0, RSTART, RLENGTH); sub(/.*\\ref\{/, "", s); sub(/\}$/, "", s); target = s } }
   function decls(line, inp,   n) {
     while (match(line, /\\decl\{[^}]*\}/)) {
       n = substr(line, RSTART + 6, RLENGTH - 7); line = substr(line, RSTART + RLENGTH)
       if (!inp) { print "FAIL \\decl{" n "} outside a proof"; bad = 1 }
-      else if (first[target] != n) { print "FAIL \\decl{" n "} in the proof of " target ", whose first \\lean entry is " (first[target] == "" ? "none" : first[target]); bad = 1 }
+      else if (index(all[target], "," n ",") == 0) { print "FAIL \\decl{" n "} in the proof of " target ", which is not in its \\lean macro"; bad = 1 }
+      else print target "\t" n > namedby
     }
   }
   match($0, /\\end\{proof\}/) { decls(substr($0, 1, RSTART - 1), inproof); inproof = 0; decls(substr($0, RSTART + RLENGTH), 0); next }
   { decls($0, inproof) }
-  END { exit bad }' >&2 || fail=1
+  END { exit bad }' namedby="$t/namedby.tsv" >&2 || fail=1
 
 
 # The table.
@@ -100,7 +101,7 @@ sed -n '/^\\begin{document}/,$p' "$t/body.tex" | awk '
   echo
   echo '<!-- prettier-ignore-start -->'
   echo
-  printf '%s\x1f%s\x1f%s\n' Paper 'Lean declarations (in bold, the one its proof names)' 'Scripts and recorded outputs' > "$t/cells"
+  printf '%s\x1f%s\x1f%s\n' Paper 'Lean declarations (in bold, those its proof names)' 'Scripts and recorded outputs' > "$t/cells"
   while IFS=$'\x1f' read -r kind label lean comp wait; do
     num=$(awk -F'\t' -v l="$label" '$1 == l { print $2; exit }' "$t/numbers.tsv")
     [[ -n $num ]] || { echo "FAIL $label has no number in $aux" >&2; fail=1; }
@@ -114,7 +115,7 @@ sed -n '/^\\begin{document}/,$p' "$t/body.tex" | awk '
           echo "FAIL $name: $n is not declared in Robbins/" >&2; fail=1; c="\`$n\`"
         else
           c="[\`$n\`]($hit)"
-        fi; [[ $n == "${ds[0]}" ]] && grep -qxF "$n" "$t/named.txt" && c="**$c**"
+        fi; grep -qxF "$label"$'\t'"$n" "$t/namedby.tsv" && c="**$c**"
         cells+=("$c")
       done
     fi

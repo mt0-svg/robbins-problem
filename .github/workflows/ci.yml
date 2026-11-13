@@ -408,13 +408,15 @@ jobs:
           lake env lean code/formal-proof/main_axioms.lean > axioms.txt 2>&1 || rc=$?
           cat axioms.txt
           cp axioms.txt verify/lean/axioms.txt
+          # Lean wraps a long list of axioms onto lines that start with a space: one line per theorem.
+          sed -e :a -e N -e '$!ba' -e 's/\n / /g' axioms.txt > axioms-joined.txt
           lean --version > verify/versions/lean.txt
           r=PASS
           [ "$rc" -eq 0 ] || r=FAIL
           for t in $(jq -r '.theorem_names[]' config.json); do
             grep -q "^'$t' depends on axioms: \[" axioms.txt || { echo "no axioms line for $t"; r=FAIL; }
           done
-          other=$(sed -n "s/^'[^']*' depends on axioms: \[\(.*\)\]$/\1/p" axioms.txt | tr ',' '\n' | tr -d ' ' \
+          other=$(sed -n "s/^'[^']*' depends on axioms: \[\(.*\)\]$/\1/p" axioms-joined.txt | tr ',' '\n' | tr -d ' ' \
             | grep -vxE 'propext|Classical\.choice|Quot\.sound' | sort -u | tr '\n' ' ' || true)
           [ -z "$other" ] || { echo "axioms outside propext, Classical.choice, Quot.sound: $other"; r=FAIL; }
           printf 'axioms\tlake env lean code/formal-proof/main_axioms.lean\t%s theorems\t%s\tlean/axioms.txt\n' \

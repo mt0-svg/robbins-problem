@@ -71,7 +71,7 @@ Robbins' problem asks for the least expected rank $V(n)$ of a value selected by 
 \begin{tabular}{>{\raggedright\arraybackslash}p{0.2\textwidth} >{\raggedright\arraybackslash}p{0.7\textwidth}}
 \rowcolor{black!6}
 \multicolumn{2}{>{\raggedright\arraybackslash}p{0.93\textwidth}}{\textit{This is AI-generated research: the results, proofs and code were found and written by AI. Credit goes to all the humans whose work it builds on.}}\\
-\badge{leangreen}{Proved in Lean 4} & Theorem~\ref{thm:main} is proved in Lean~4 with Mathlib, with only the standard axioms: \texttt{Robbins.main\_so}, with no hypothesis, for the bound on $V(n)$ for every $n\ge300$, and \texttt{Robbins.main\_so\_limit} for the same bound on every limit of the sequence $V(n)$.\\
+\badge{leangreen}{Proved in Lean 4} & Theorem~\ref{thm:main} is proved in Lean~4 with Mathlib, with no hypothesis and only the standard axioms: \texttt{Robbins.main\_so} for the bound on $V(n)$ for every $n\ge300$, and \texttt{Robbins.main\_limit} for the existence of the limit $V$ and its bounds.\\
 \rowcolor{black!6}
 \multicolumn{2}{>{\raggedright\arraybackslash}p{0.93\textwidth}}{Lean proofs, code, certificates and the \TeX{} source: \href{\repo}{\texttt{github.com/mt0-svg/robbins-problem}}}\\
 \end{tabular}
@@ -94,28 +94,28 @@ A rule is a family of Borel sets $D_t\subseteq[0,1]^t$, $1\le t\le n$: it select
 \[
 V(n)=\inf_D \E[R_D],\qquad V=\lim_{n\to\infty}V(n),
 \]
-the infimum running over all rules for $n$ values. The sequence $V(n)$ is nondecreasing (Theorem~\ref{thm:mono} below), so the limit exists, and Bruss and Ferguson \cite[Corollary~1]{BF93} show $V(n)\le1+4(n-1)/(3(n+1))<7/3$ for every $n$.
+the infimum running over all rules for $n$ values. The sequence $V(n)$ is nondecreasing (Theorem~\ref{thm:mono} below) and bounded by $5$ (Lemma~\ref{lem:upper} below), so the limit $V$ exists.
 
 \subsection*{The question}
-Robbins remarked that $V(n)$ approaches a value not far from $2$ \cite[Section~2]{Bruss05}. Assaf and Samuel-Cahn \cite[Theorem~3.3]{AS96} proved $V>1.8502$, and Bruss and Ferguson \cite[p.~616, and Table~3, p.~625]{BF93} estimated from the values of truncated problems that $V$ is not smaller than $1.908$. Three years later they wrote \cite[p.~7]{BF96}: ``We even do not know yet whether $V > 2$, although one may, in principle, be able to settle this question numerically by the truncation method proposed in B\&F (1993).'' Bruss and Swan \cite[Section~3, p.~8]{BS09} still give $1.9<V<2.33$ as the known bounds, and Bruss \cite[Section~3, p.~6]{Bruss22} writes in 2022 ``we know $1.908<v\le2.327\ldots$''. Two estimates point below~$2$. Swan \cite[Part~II, Section~1.6, p.~66]{Swan07} found that the extrapolation of the truncation bounds of Bruss and Ferguson ``rather hints to a value around 1.97 than around 2.32''. Bruss \cite[Section~6.2, p.~115]{Bruss05} noted that $V<1.985$ if none of the later ratios of the differences of these bounds exceeds the last one, $0.615$, and read the differences as ``observational support to the conjecture that $V<2$ (and, in particular, that $V<W$). However, we do not know if this is true.'' He wrote, in the list of open questions that closes his survey, where (a) and (b) are the alternatives $V<W$ and $V=W$ for the limit $W$ of the optimal values over memoryless threshold rules:
+Robbins remarked that $V(n)$ approaches a value not far from $2$ \cite[Section~2]{Bruss05}. Assaf and Samuel-Cahn \cite[Theorem~3.3]{AS96} proved $V>1.8502$, and Bruss and Ferguson \cite[p.~616, and Table~3, p.~625]{BF93} estimated from the values of truncated problems that $V$ is not smaller than $1.908$. Three years later they wrote \cite[p.~7]{BF96}: ``We even do not know yet whether $V > 2$, although one may, in principle, be able to settle this question numerically by the truncation method proposed in B\&F (1993).'' Bruss and Swan \cite[Section~3, p.~8]{BS09} still give $1.9<V<2.33$ as the known bounds, and Bruss \cite[Section~3, p.~6]{Bruss22} writes in 2022 ``we know $1.908<v\le2.327\ldots$''. Mazzella \cite[Theorems~3 and~4]{Mazzella26} gives $2.2731\le V\le2.3088$ from Monte Carlo simulations, each bound with confidence $1-10^{-3}$. Two estimates point below~$2$. Swan \cite[Part~II, Section~1.6, p.~66]{Swan07} found that the extrapolation of the truncation bounds of Bruss and Ferguson ``rather hints to a value around 1.97 than around 2.32''. Bruss \cite[Section~6.2, p.~115]{Bruss05} noted that $V<1.985$ if none of the later ratios of the differences of these bounds exceeds the last one, $0.615$, and read the differences as ``observational support to the conjecture that $V<2$ (and, in particular, that $V<W$). However, we do not know if this is true.'' He wrote, in the list of open questions that closes his survey, where (a) and (b) are the alternatives $V<W$ and $V=W$ for the limit $W$ of the optimal values over memoryless threshold rules:
 
 \begin{question}[{Bruss \cite[Section~8, p.~119]{Bruss05}, 2005}]\label{q:bruss}
 ``If neither (a) nor (b) can be proved, we suggest finding an analytical proof that $V<2$ or $V\ge2$.''
 \end{question}
 
 \subsection*{The result}
-\begin{theorem}\label{thm:main}\lean{Robbins.main_so, Robbins.main_so_limit, Robbins.two_lt_v, Robbins.v300, Robbins.lower_bound_of_base, Robbins.limit_lower_bound_of_base, Robbins.RelaxedSubSolution.val_one_le_v, Robbins.v_mono, Robbins.Cert.SO.relaxed_of_tables}
+\begin{theorem}\label{thm:main}\lean{Robbins.main_so, Robbins.main_limit, Robbins.two_lt_limit, Robbins.two_lt_v, Robbins.v300, Robbins.exists_tendsto_v, Robbins.v_le_five, Robbins.lower_bound_of_base, Robbins.main_so_limit, Robbins.limit_lower_bound_of_base, Robbins.RelaxedSubSolution.val_one_le_v, Robbins.v_mono, Robbins.Cert.SO.relaxed_of_tables}
 For every integer $n\ge300$,
 \[
 V(n)\ \ge\ \frac{137704521264}{2^{36}}=2.00386451\ldots
 \]
-In particular $V>2$.
+The sequence $V(n)$ converges, and its limit $V$ satisfies $137704521264/2^{36}\le V\le5$. In particular $V>2$.
 \end{theorem}
 
 Theorem~\ref{thm:main} answers the question of Bruss and Ferguson and decides the alternative of Question~\ref{q:bruss}: $V>2$, and the conjecture $V<2$ is false. Theorem~\ref{thm:main} contradicts both estimates. Its proof is computer-assisted and checked in Lean, not the analytical proof that Question~\ref{q:bruss} asks for. It does not decide between $V<W$ and $V=W$.
 
 \subsection*{Prior work}
-On the side of upper bounds, the bound $7/3$ comes from a memoryless threshold rule \cite[Corollary~1]{BF93}; Assaf and Samuel-Cahn give threshold rules whose expected rank tends to $2.3267$ and prove $W\ge2.29558$ \cite[Section~4 and Corollary~5.2]{AS96}; Meier and S\"ogner give a rule with expected rank $2.32614$ in the planar Poisson model of the problem \cite[Section~2, p.~335]{MS17}; and Brice, Bruss, Majumdar and Raskin \cite{BBMR25,BBMR26} compute in floating point, with finite Markov decision processes, the expected ranks of rules for $n=5,10,50,100,500$ \cite[Table~1]{BBMR26}, which bound $V(n)$ from above. For small $n$, $V(1)=1$ and $V(2)=5/4$, Assaf and Samuel-Cahn compute $V(3)=1.3915\ldots$ \cite[p.~829]{AS96}, and Dendievel and Swan \cite[Section~3]{DS16} compute $V(4)=1.4932\ldots$ in closed form.
+On the side of upper bounds, Bruss and Ferguson \cite[(1.10) and Corollary~1]{BF93} show $V(n)\le1+4(n-1)/(3(n+1))<7/3$ for every $n$ with a memoryless threshold rule; Assaf and Samuel-Cahn give threshold rules whose expected rank tends to $2.3267$ and prove $W\ge2.29558$ \cite[Section~4 and Corollary~5.2]{AS96}; Meier and S\"ogner give a rule with expected rank $2.32614$ in the planar Poisson model of the problem \cite[Section~2, p.~335]{MS17}; and Brice, Bruss, Majumdar and Raskin \cite{BBMR25,BBMR26} compute in floating point, with finite Markov decision processes, the expected ranks of rules for $n=5,10,50,100,500$ \cite[Table~1]{BBMR26}, which bound $V(n)$ from above. For small $n$, $V(1)=1$ and $V(2)=5/4$, Assaf and Samuel-Cahn compute $V(3)=1.3915\ldots$ \cite[p.~829]{AS96}, and Dendievel and Swan \cite[Section~3]{DS16} compute $V(4)=1.4932\ldots$ in closed form.
 
 \subsection*{The method}
 The proof has four steps.
@@ -123,18 +123,18 @@ The proof has four steps.
 \item\emph{A relaxation} (Section~\ref{sec:proof} and Section~\ref{sec:relax}). In a relaxed problem the decision maker remembers only the $m$ smallest values seen so far, and a value that leaves the memory is charged the probability that all later values exceed it, a lower bound on the probability that it adds one to the final rank. Every sub-solution of the backward induction of the relaxed problem bounds $V(n)$ from below (Theorem~\ref{thm:relax}). What is left is a dynamic program on memories, vectors of $[0,1]^m$.
 \item\emph{A certificate with values and slopes} (Section~\ref{sec:cert}). Tables on geometric grids, a value and a slope in each coordinate for each grid state, define a function that is affine on each box of the grid. A finite set of inequalities, one for each grid state and each placement of the forgotten coordinates, makes it a sub-solution (Theorem~\ref{thm:sound}). The slopes remove the loss of the order of the width of the boxes that a function constant on boxes incurs, and with them a grid of ratio $1.3$ gives a bound above~$2$.
 \item\emph{The computation} (Section~\ref{sec:run} and Appendix~\ref{app:integer}). For $m=5$ and $n=300$, integer tables with at most $15504$ grid states at each time satisfy these inequalities and give $V(300)\ge137704521264/2^{36}$ (Proposition~\ref{prop:cert300}).
-\item\emph{Monotonicity} (Appendix~\ref{app:mono}). Since $V(n)$ is nondecreasing \cite[Theorem~2]{BF93}, the bound holds for every $n\ge300$.
+\item\emph{Monotonicity and a bound from above} (Appendix~\ref{app:mono}). Since $V(n)$ is nondecreasing (Theorem~\ref{thm:mono}), the bound holds for every $n\ge300$. The threshold rule of Bruss and Ferguson gives $V(n)\le5$ (Lemma~\ref{lem:upper}), so $V(n)$ converges and the bound passes to its limit.
 \end{enumerate}
 The memory gives the relaxation the relative rank of the current value among the smallest values seen, and the charge keeps an exact lower bound on the cost of the values it forgets.
 
 \subsection*{The formal proof}
 Theorem~\ref{thm:main} is proved in Lean~4 with Mathlib, on definitions that repeat those above, from the general results of Sections~\ref{sec:relax} to~\ref{sec:cert} and Appendices~\ref{app:mono} and~\ref{app:integer}; the Lean kernel checks the tables of Proposition~\ref{prop:cert300} (Section~\ref{sec:formal}).
 
-Section~\ref{sec:proof} states the three results behind Theorem~\ref{thm:main} and proves the theorem, Sections~\ref{sec:relax} to~\ref{sec:run} prove the three results, Section~\ref{sec:formal} describes the formal proof and its data, and the appendices hold the model, the monotonicity and the bound in integer arithmetic.
+Section~\ref{sec:proof} states the four results behind Theorem~\ref{thm:main} and proves the theorem, Sections~\ref{sec:relax} to~\ref{sec:run} prove two of them, Section~\ref{sec:formal} describes the formal proof and its data, and the appendices hold the model, the monotonicity, the bound from above and the bound in integer arithmetic.
 
 \section{The relaxation and the proof of Theorem~\ref{thm:main}}\label{sec:proof}
 
-This section defines the relaxed problem on which the proof rests, states the three results that Theorem~\ref{thm:main} is assembled from, and proves the theorem. Section~\ref{sec:relax} proves the first of them, Appendix~\ref{app:mono} the second, and Sections~\ref{sec:cert} and~\ref{sec:run} the third.
+This section defines the relaxed problem on which the proof rests, states the four results that Theorem~\ref{thm:main} is assembled from, and proves the theorem. Section~\ref{sec:relax} proves the first of them, Appendix~\ref{app:mono} the second and the fourth, and Sections~\ref{sec:cert} and~\ref{sec:run} the third.
 
 \subsection{The relaxed problem}
 Fix integers $n\ge1$ and $m\ge0$. A \emph{memory} is a vector $y=(y_1,\dots,y_m)$ with $0\le y_1\le\dots\le y_m\le1$. For a memory $y$ and $x\in[0,1]$, let $\ins(y,x)$ be the memory formed by the $m$ smallest of the numbers $y_1,\dots,y_m,x$, in increasing order, and let $\drop(y,x)=\max(y_m,x)$ be the largest of them ($\drop(y,x)=x$ when $m=0$). For $1\le t\le n$ put
@@ -154,8 +154,8 @@ A \emph{relaxed sub-solution} for $(n,m)$ is a family $u_1,\dots,u_n$ of Borel f
 
 The inequalities (R$_n$) and (R$_t$) are those of backward induction for the relaxed problem, with $u_t(y)$ in place of its value at time $t$ and memory $y$. Only these inequalities are used, so no value function has to be computed exactly.
 
-\subsection{The three results}
-The proof of Theorem~\ref{thm:main} uses the relaxation to bound $V(300)$ from below, and monotonicity in $n$ to pass from $n=300$ to every larger $n$. The first result says that a relaxed sub-solution bounds Robbins' problem from below.
+\subsection{The four results}
+The proof of Theorem~\ref{thm:main} uses the relaxation to bound $V(300)$ from below, monotonicity in $n$ to pass from $n=300$ to every larger $n$, and a bound from above for the existence of the limit. The first result says that a relaxed sub-solution bounds Robbins' problem from below.
 
 \begin{theorem}\label{thm:relax}\lean{Robbins.RelaxedSubSolution.val_one_le_v, Robbins.le_v_of_verification, Robbins.card_lt_add_ite, Robbins.card_traj}
 Let $n\ge1$, $m\ge0$, and let $(u_t)$ be a relaxed sub-solution for $(n,m)$. Then $V(n)\ge u_1(1,\dots,1)$.
@@ -178,9 +178,17 @@ u_1(1,\dots,1)=\frac{137704521264}{2^{36}}.
 \]
 \end{proposition}
 
+The fourth result bounds $V(n)$ from above; the proof of Theorem~\ref{thm:main} uses it for the existence of the limit $V$ and for the bound $V\le5$. It follows from the bound $7/3$ of Bruss and Ferguson \cite[Corollary~1]{BF93}; Appendix~\ref{app:upper} proves it with their threshold rule.
+
+\begin{lemma}\label{lem:upper}\lean{Robbins.v_le_five, Robbins.Threshold.expectedRank_le_five, Robbins.Threshold.expectedRank_le_sum, Robbins.Threshold.rank_le_sum, Robbins.Threshold.law_real_box_le, Robbins.Threshold.survive_eq, Robbins.Threshold.sum_le_four}
+For every $n\ge1$, $V(n)\le5$.
+\end{lemma}
+
 \subsection{Proof of the main theorem}
 \begin{proof}[Proof of Theorem~\ref{thm:main}]
-Let $\beta=137704521264/2^{36}$. By Proposition~\ref{prop:cert300} and Theorem~\ref{thm:relax}, $V(300)\ge \beta$. By Theorem~\ref{thm:mono}, $V(n)\ge V(300)\ge \beta$ for every $n\ge300$. Since $V(n)$ is nondecreasing, $V=\lim V(n)=\sup_n V(n)\ge \beta$, and $\beta>2$ because $2\cdot2^{36}=137438953472<137704521264$. This is \decl{Robbins.main_so} in the formalization, for the bound on $V(n)$.
+Let $\beta=137704521264/2^{36}$. By Proposition~\ref{prop:cert300} and Theorem~\ref{thm:relax}, $V(300)\ge \beta$. By Theorem~\ref{thm:mono}, $V(n)\ge V(300)\ge \beta$ for every $n\ge300$. This is \decl{Robbins.main_so} in the formalization.
+
+By Theorem~\ref{thm:mono} and Lemma~\ref{lem:upper}, the sequence $V(n)$ is nondecreasing and bounded by $5$, so it converges, and its limit is $V=\sup_nV(n)$. Hence $\beta\le V(300)\le V\le5$, and $\beta>2$ because $2\cdot2^{36}=137438953472<137704521264$. This is \decl{Robbins.main_limit} in the formalization.
 \end{proof}
 
 \section{Proof of the relaxation theorem}\label{sec:relax}
@@ -497,20 +505,18 @@ The tables cover the $299$ times $t<n$ with $4539713$ grid states in all, and th
 This section describes how the proof is checked: what the formal proof proves and what it trusts, and which programs wrote the data it checks.
 
 \subsection{The formal proof}\label{sec:formal-lean}\computed{code/formal-proof/main_axioms.lean, .github/workflows/ci.yml, config.json}
-The formal proof \cite{RobbinsLean} is a development in Lean~4 \cite{Lean4} with Mathlib \cite{Mathlib20}, in the versions of Section~\ref{sec:formal-soft}. Its definitions are those of Section~\ref{sec:intro}: the law of the values is the product of $n$ copies of the uniform law on $[0,1]$; a rule is a family of measurable sets of histories, and it stops at the first time whose history lies in its set, and at time $n$ if there is none; the rank of the selected value is one plus the number of values below it; and $V(n)$ is the infimum of the expected rank over all rules. The formal proof states Theorem~\ref{thm:main} as two theorems: $137704521264/2^{36}\le V(n)$ for every $n\ge300$, and the same bound for every limit of the sequence $V(n)$. The first has no hypothesis, and the second assumes only that its number is a limit of the sequence; both depend on the three standard axioms of Lean and Mathlib, propositional extensionality, the axiom of choice and the soundness of quotients, and on no other axiom. The Lean kernel checks each declaration of the development when it is compiled. The program nanoda \cite{nanoda}, an implementation of the Lean kernel written separately, checks again the two theorems and the three other theorems of the file that states them (the bound on $V(300)$, the inequality $V(n)>2$ for every $n\ge300$, and the relaxed sub-solution of Proposition~\ref{prop:cert300}), with every declaration they depend on, those of Mathlib and of the finite verification included: $59335$ declarations, with no error. Comparator \cite{Comparator}, with nanoda as its kernel, checks the theorems behind Theorems~\ref{thm:relax} and~\ref{thm:mono}, Proposition~\ref{prop:model} and the passage from $V(300)$ to every $n\ge300$ and to the limit: they prove statements written on a copy, made by a program, of the definitions of the formal statement and of Definition~\ref{def:relaxed}, in a file that imports only Mathlib, with no axiom other than the three above. It also checks, against a file that copies the definitions of the formal statement and imports only Mathlib, four theorems of the formal proof of Theorem~\ref{thm:main}: the bound on $V(300)$, the two theorems that state Theorem~\ref{thm:main}, and the inequality $V(n)>2$ for every $n\ge300$, again with no axiom other than the three standard ones. The continuous integration of the repository runs Comparator on all these theorems together, and on the theorem of Proposition~\ref{prop:cert300}, against one file that imports only Mathlib.
+The formal proof \cite{RobbinsLean} is a development in Lean~4 \cite{Lean4} with Mathlib \cite{Mathlib20}, checked with Lean~4.34.1 and Mathlib~v4.34.1. Its definitions are those of Section~\ref{sec:intro}: the law of the values is the product of $n$ copies of the uniform law on $[0,1]$; a rule is a family of measurable sets of histories, and it stops at the first time whose history lies in its set, and at time $n$ if there is none; the rank of the selected value is one plus the number of values below it; and $V(n)$ is the infimum of the expected rank over all rules. The formal proof states Theorem~\ref{thm:main} as two theorems, neither with a hypothesis: $137704521264/2^{36}\le V(n)$ for every $n\ge300$, and the existence of a real number $V$ to which $V(n)$ converges and which satisfies $137704521264/2^{36}\le V\le5$. Both depend on the three standard axioms of Lean and Mathlib, propositional extensionality, the axiom of choice and the soundness of quotients, and on no other axiom. The Lean kernel checks each declaration of the development when it is compiled. Comparator \cite{Comparator} checks these two theorems, with the theorems behind Theorems~\ref{thm:relax} and~\ref{thm:mono}, Proposition~\ref{prop:cert300}, Lemma~\ref{lem:upper} and Proposition~\ref{prop:model}, against a file that imports only Mathlib and holds a verbatim copy of the definitions of the formal statement, of Definition~\ref{def:relaxed} and of the stopping-time model of Proposition~\ref{prop:model}: each of them proves the statement of that file, with no axiom other than the three above. For Comparator, the program nanoda \cite{nanoda}, an implementation of the Lean kernel written separately, checks again every declaration these theorems depend on, those of Mathlib and of the finite verification included.
 
 The finite verification of Proposition~\ref{prop:cert300} is checked by the Lean kernel. For each time $t<300$ it is a Boolean function of the tables of times $t$ and $t+1$ that the kernel evaluates to true, together with a lemma proved in Lean that says what this value means: hypothesis~(ii) of Corollary~\ref{cor:integer} at time $t$, for every grid state and every choice; at time $300$ it is a function of the last table and means hypothesis~(i). The function computes the integers $T^{\mathbb Z}(g,c)$ and $\mu^{\mathbb Z}_k(g,c)$ of Appendix~\ref{app:integer} in a reorganized order, which shares among the grid states with the same first coordinates the parts of the bound that depend only on them. At the $280$ times $t$ with $G_{t+1}=G_t$, a second function treats at once the grid states with the same largest coordinate, packed into the bits of one integer, and a lemma proved in Lean says that it returns true only when the first function does. The check is split into $4837$ theorems: at the $19$ times $t<300$ with $G_{t+1}\ne G_t$, each is on a range of grid states; at the $280$ other times, each is on the grid states of a range of values of the largest coordinate, or, when one value has too many of them, on a window of these states; and one is on time $300$. The kernel also checks that the theorems of each time cover all its grid states, and a theorem proved in Lean chains them into the relaxed sub-solution of Proposition~\ref{prop:cert300}. No proof of the development evaluates a function by compiled code: every evaluation is done by the kernel.
 
-The written proofs follow the route and the lemma cuts of the formal proof, with one difference: the formal proof states the soundness theorem directly in the integer form of Corollary~\ref{cor:integer}, so that Proposition~\ref{prop:onechoice} and Proposition~\ref{prop:integer} form one step of its proof, and Theorem~\ref{thm:sound} is proved for integer tables. It describes a choice by the list of the cells of the coordinates, each with its anchor and its width, as in Section~\ref{sec:bound}. The last sentence of each formalized proof names the main declaration behind it; where the formal proof splits a statement into parts, it names the declaration of one part and says which, and the repository lists the others.
+The written proofs follow the route and the lemma cuts of the formal proof, with one difference: the formal proof states the soundness theorem directly in the integer form of Corollary~\ref{cor:integer}, so that Proposition~\ref{prop:onechoice} and Proposition~\ref{prop:integer} form one step of its proof, and Theorem~\ref{thm:sound} is proved for integer tables. It describes a choice by the list of the cells of the coordinates, each with its anchor and its width, as in Section~\ref{sec:bound}. The last sentence of each formalized proof, or of each part of a proof, names the main declaration behind it, and the repository lists the others.
 
 \subsection{The data of the checks}\label{sec:formal-data}\computed{code/soq/src/bin/soq.rs, code/soq/out/soq-m5-n300-r1.3-w0.35-14.txt}
-The tables that the kernel checks were written by \texttt{soq}, a Rust program run outside the proof, which computes the integers of Section~\ref{sec:tables} with checked integer arithmetic. A script turns them into the Lean modules of the check. The proof of Theorem~\ref{thm:main} trusts neither program, since the kernel checks what they write.
+The tables that the kernel checks were written by \texttt{soq}, a Rust program run outside the proof, which computes the integers of Section~\ref{sec:tables} with checked integer arithmetic. A script turns them into the Lean modules of the check. The proof of Theorem~\ref{thm:main} trusts neither program, since the kernel checks what they write. The repository \url{\repo} contains the Lean development, the program that wrote the tables, the script that turns them into Lean modules, and the \TeX{} source of this paper.
 
-\subsection{Software and hardware}\label{sec:formal-soft}\computed{.github/workflows/ci.yml, code/soq/out/tables.sha256}
-The tables were computed with Rust~1.101 (nightly of 2026-10-01), and the formal proof was checked with Lean~4.34.1 and Mathlib~v4.34.1, on one machine with an AMD Ryzen~9 5900X processor ($12$ cores, $24$ threads) and $64$~GB of memory. The program \texttt{soq} computes the tables in a few seconds. The Lean kernel checks the $4837$ theorems of the finite verification in about five hours of compilation in all, each with at most $2.6$~GB of memory, and nanoda checks these five theorems again in $55$ minutes on four threads, with less than $9.1$~GB of memory. Comparator, with nanoda on four threads, checks the four theorems of Section~\ref{sec:formal-lean} in $81$ minutes, the build in its sandbox included, with less than $12$~GB of memory. The repository pins Rust~1.98.1 for its two programs: with it, \texttt{soq} writes the same grid file and the same $300$ tables, byte for byte, and the script writes the same Lean modules, up to the comment lines that name the script. The repository \url{\repo} contains the Lean development, the program that wrote the tables, the script that turns them into Lean modules, and the \TeX{} source of this paper.
 
 \appendix
-\section{\texorpdfstring{The model and the monotonicity of $V(n)$}{The model and the monotonicity of V(n)}}\label{app:mono}
+\section{\texorpdfstring{The model, the monotonicity of $V(n)$ and a bound from above}{The model, the monotonicity of V(n) and a bound from above}}\label{app:mono}
 
 \subsection{The model}
 The next proposition says that the infimum $V(n)$ of Section~\ref{sec:intro} is the usual value of Robbins' problem: the infimum over all stopping times, with ties counted either way.
@@ -553,6 +559,34 @@ The sets $D'_i$ are Borel. The rule $D'$ runs $D$ on the sequence $\iota_k(\omeg
 \int_{[0,1]^{n+1}}R_D=\sum_{k=1}^{n+1}\int_0^1F_k(\omega)\,d\omega\ \ge\ (n+1)\,V(n)\int_0^1\omega^n\,d\omega=V(n).
 \]
 The rule $D'$ depends on $(\omega,k)$, but the bound is used for each $(\omega,k)$ separately, so no measurability in $(\omega,k)$ is needed. Taking the infimum over $D$ gives $V(n+1)\ge V(n)$. This is \decl{Robbins.v_mono} in the formalization.
+\end{proof}
+
+\subsection{A bound from above}\label{app:upper}
+This subsection proves Lemma~\ref{lem:upper} with the threshold rule of Bruss and Ferguson \cite[(1.10)]{BF93}. They compute the expected rank of this rule exactly \cite[(2.10)]{BF93} and obtain $V(n)\le1+4(n-1)/(3(n+1))<7/3$ \cite[Corollary~1]{BF93}, which implies the lemma. The proof below bounds the same expected rank by measures of products of intervals only, at the price of the constant~$5$.
+
+\begin{proof}[Proof of Lemma~\ref{lem:upper}]
+Fix $n\ge1$. For $1\le t\le n$ let $\alpha_t=2/(n-t+2)$, so that $0<\alpha_t<1$ for $t<n$ and $\alpha_n=1$, and let
+\[
+\Lambda_t=\prod_{s<t}(1-\alpha_s)=\frac{(n-t+2)(n-t+1)}{(n+1)\,n},
+\]
+the second form by induction on $t$, since $\Lambda_1=1$ and $1-\alpha_t=(n-t)/(n-t+2)$. Let $D$ be the rule with $D_t=\{h\in[0,1]^t:h_t\le\alpha_t\}$, which stops at the first time $t$ with $X_t\le\alpha_t$, and write $\tau(x)$ for its time on a sequence $x\in[0,1]^n$.
+
+\emph{A pointwise bound.} Let $x\in[0,1]^n$ and $t=\tau(x)$. Then $x_s>\alpha_s$ for $s<t$, and $x_t\le\alpha_t$: for $t<n$ by the definition of $\tau$, and for $t=n$ because $x_n\le1=\alpha_n$. If moreover $x_j<x_t$, then $j\ne t$ and $x_j<\alpha_t$. So $x$ lies in the set
+\[
+\mathcal K_{t,j}=\{z\in[0,1]^n: z_s>\alpha_s\text{ for }s<t,\ z_t\le\alpha_t,\ z_j<\alpha_t\}
+\]
+for every $j$ with $x_j<x_t$, and, the other terms being nonnegative,
+\[
+R_D(x)=1+\#\{j:x_j<x_t\}\le1+\sum_{t'=1}^n\sum_{j\ne t'}\one_{\mathcal K_{t',j}}(x).
+\]
+
+\emph{Their measures.} Each $\mathcal K_{t,j}$ is a product of intervals, and its measure is the product of their lengths: $1-\alpha_s$ for $s<t$ with $s\ne j$, $\alpha_t$ for the coordinate $t$, for the coordinate $j$ either $\alpha_t$ if $j>t$ or $(\alpha_t-\alpha_j)^+$ if $j<t$, and $1$ for the other coordinates. Since $\alpha_t(1-\alpha_j)\ge0$ and $\alpha_t(1-\alpha_j)-(\alpha_t-\alpha_j)=\alpha_j(1-\alpha_t)\ge0$, we have $(\alpha_t-\alpha_j)^+\le\alpha_t(1-\alpha_j)$, and in both cases the measure of $\mathcal K_{t,j}$ is at most $\Lambda_t\alpha_t^2$.
+
+\emph{Conclusion.} The rank $R_D$ is a bounded Borel function, and the right side of the pointwise bound is a finite sum of indicators of Borel sets. Integrating over $[0,1]^n$,
+\[
+\E[R_D]\le1+(n-1)\sum_{t=1}^n\Lambda_t\alpha_t^2=1+\frac{4(n-1)}{n(n+1)}\sum_{t=1}^n\frac{n-t+1}{n-t+2}\le1+\frac{4(n-1)}{n+1}<5,
+\]
+since each of the $n$ fractions is less than~$1$. Hence $V(n)\le\E[R_D]<5$. This is \decl{Robbins.v_le_five} in the formalization.
 \end{proof}
 
 \section{The bound in integer arithmetic}\label{app:integer}

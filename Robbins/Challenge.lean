@@ -296,36 +296,49 @@ namespace Robbins
 
 open Filter Topology
 
-/-- The bound on `v 300` (Section 6.1). -/
+/-- The bound on `v 300`. -/
 theorem v300 : ((137704521264 : ℝ) / 2 ^ 36) ≤ v 300 := sorry
 
-/-- Theorem 1.2, for every `n ≥ 300`. -/
+/-- The main theorem, for every `n ≥ 300`. -/
 theorem main_so : ∀ n ≥ 300, ((137704521264 : ℝ) / 2 ^ 36) ≤ v n := sorry
 
-/-- Theorem 1.2, for every limit of `v n`. -/
+/-- The main theorem, for the limit: `v n` converges, and its limit `V` satisfies
+`137704521264 / 2 ^ 36 ≤ V ≤ 5`. -/
+theorem main_limit : ∃ V : ℝ, Tendsto v atTop (𝓝 V) ∧ (137704521264 : ℝ) / 2 ^ 36 ≤ V ∧ V ≤ 5 := sorry
+
+/-- The limit of `v n` exists and is larger than `2`. -/
+theorem two_lt_limit : ∃ V : ℝ, Tendsto v atTop (𝓝 V) ∧ 2 < V := sorry
+
+/-- The bound of `main_so` for every limit of `v n`. -/
 theorem main_so_limit : ∀ V : ℝ, Tendsto v atTop (𝓝 V) → (137704521264 : ℝ) / 2 ^ 36 ≤ V := sorry
 
-/-- `v n > 2` for every `n ≥ 300` (Theorem 1.2). -/
+/-- `v n > 2` for every `n ≥ 300`. -/
 theorem two_lt_v : ∀ n ≥ 300, (2 : ℝ) < v n := sorry
 
-/-- Proposition 2.4. -/
+/-- The relaxed sub-solution for `300` values and memory `5`. -/
 theorem relaxed300 :
     ∃ u : RelaxedSubSolution 300 5, u.u 1 (fun _ => 1) = (137704521264 : ℝ) / 2 ^ 36 := sorry
 
-/-- Theorem 2.2. -/
+/-- A relaxed sub-solution bounds `v n` from below. -/
 theorem RelaxedSubSolution.val_one_le_v {n m : ℕ} (u : RelaxedSubSolution n m) (hn : 1 ≤ n) :
     u.u 1 (fun _ => 1) ≤ v n := sorry
 
-/-- Theorem 2.3. -/
+/-- `v` is nondecreasing. -/
 theorem v_mono : Monotone v := sorry
 
-/-- Proposition A.1: `v` is the value of the second formalization, over stopping rules. -/
+/-- `v n ≤ 5` for every `n`. -/
+theorem v_le_five : ∀ n, v n ≤ 5 := sorry
+
+/-- `v n` converges. -/
+theorem exists_tendsto_v : ∃ V : ℝ, Tendsto v atTop (𝓝 V) := sorry
+
+/-- `v` is the value of the second formalization, over stopping rules. -/
 theorem robbinsValue_eq_v (n : ℕ) : Indep.robbinsValue (n + 1) = v (n + 1) := sorry
 
-/-- From `v N` to every `n ≥ N` (Section 6.1), by Theorem 2.3. -/
+/-- From `v N` to every `n ≥ N`. -/
 theorem lower_bound_of_base {c : ℝ} {N : ℕ} (h : c ≤ v N) : ∀ n ≥ N, c ≤ v n := sorry
 
-/-- From `v N` to every limit of `v n` (Section 6.1). -/
+/-- From `v N` to every limit of `v n`. -/
 theorem limit_lower_bound_of_base {c : ℝ} {N : ℕ} (h : c ≤ v N) (V : ℝ) (hV : Tendsto v atTop (𝓝 V)) :
     c ≤ V := sorry
 

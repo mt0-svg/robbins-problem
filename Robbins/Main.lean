@@ -1,4 +1,5 @@
 import Robbins.Target
+import Robbins.Upper
 import RobbinsSO.N300.Final
 
 /-!
@@ -10,6 +11,9 @@ tables written by the program soq of code/soq), checked in the kernel step by st
 (Robbins/Cert/SO/Lanes.lean, with `checkStep_of_lanesRanges` of Robbins/Cert/SO/LanesSound.lean), chained by
 `ChainSO` (Robbins/Cert/SO/EvalKChain.lean): `uh_1 (cnt_1, ..., cnt_1) = 137704521264`, so
 `v 300 ≥ 137704521264 / 2 ^ 36 > 2.0038`.
+
+With the upper bound `v_le_five` and the convergence `exists_tendsto_v` (Robbins/Upper.lean), the limit `V` of
+`v n` exists and `137704521264 / 2 ^ 36 ≤ V ≤ 5` (`main_limit`), so `V > 2` (`two_lt_limit`).
 
 The generated modules (`RobbinsSO.N300`) are not in the repository: code/formal-proof/gen.sh writes them from
 the tables of soq (code/soq/run.sh), as the job data of .github/workflows/ci.yml does.
@@ -45,5 +49,15 @@ theorem relaxed300 :
   refine ⟨u, ?_⟩
   rw [hu]
   norm_num [Cert.SO.K.DS]
+
+/-- The limit `V` of `v n` exists and `137704521264 / 2 ^ 36 ≤ V ≤ 5`. -/
+theorem main_limit : ∃ V : ℝ, Tendsto v atTop (𝓝 V) ∧ (137704521264 : ℝ) / 2 ^ 36 ≤ V ∧ V ≤ 5 := by
+  obtain ⟨V, hV⟩ := exists_tendsto_v
+  exact ⟨V, hV, main_so_limit V hV, le_of_tendsto' hV v_le_five⟩
+
+/-- The limit of `v n` exists and exceeds `2`. -/
+theorem two_lt_limit : ∃ V : ℝ, Tendsto v atTop (𝓝 V) ∧ 2 < V := by
+  obtain ⟨V, hV, h1, -⟩ := main_limit
+  exact ⟨V, hV, lt_of_lt_of_le (by norm_num) h1⟩
 
 end Robbins

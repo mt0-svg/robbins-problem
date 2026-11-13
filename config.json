@@ -11,7 +11,11 @@
     "Robbins.v_mono",
     "Robbins.robbinsValue_eq_v",
     "Robbins.lower_bound_of_base",
-    "Robbins.limit_lower_bound_of_base"
+    "Robbins.limit_lower_bound_of_base",
+    "Robbins.v_le_five",
+    "Robbins.exists_tendsto_v",
+    "Robbins.main_limit",
+    "Robbins.two_lt_limit"
   ],
   "permitted_axioms": [
     "propext",

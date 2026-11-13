@@ -13,3 +13,7 @@ import Robbins.Solution
 #print axioms Robbins.robbinsValue_eq_v
 #print axioms Robbins.lower_bound_of_base
 #print axioms Robbins.limit_lower_bound_of_base
+#print axioms Robbins.v_le_five
+#print axioms Robbins.exists_tendsto_v
+#print axioms Robbins.main_limit
+#print axioms Robbins.two_lt_limit

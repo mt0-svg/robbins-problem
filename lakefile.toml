@@ -1,5 +1,5 @@
 name = "robbins"
-version = "1.0.0"
+version = "1.1.0"
 description = "The value of Robbins' problem is larger than 2: V(n) > 2.0038 for every n >= 300, formalized in Lean 4"
 keywords = ["math", "probability", "optimal stopping", "Robbins' problem", "formal verification"]
 license = "Apache-2.0"
@@ -32,7 +32,7 @@ leanOptions = { autoImplicit = true, relaxedAutoImplicit = true }
 # The development and the main theorems (Robbins/Main.lean imports the data modules of RobbinsSO).
 [[lean_lib]]
 name = "Main"
-globs = ["Robbins.Basic.+", "Robbins.Relax.+", "Robbins.Mono.+", "Robbins.Cert.+", "Robbins.Lanes.+", "Robbins.Target", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
+globs = ["Robbins.Basic.+", "Robbins.Relax.+", "Robbins.Mono.+", "Robbins.Cert.+", "Robbins.Lanes.+", "Robbins.Target", "Robbins.Upper", "Robbins.Upper.+", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
 roots = ["Robbins.Target", "Robbins.Main", "Robbins.StatementCheck.Equiv"]
 
 # The data of the certificate and the theorems that check it, written by code/formal-proof/gen.sh (not committed).

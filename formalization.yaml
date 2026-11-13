@@ -1,0 +1,166 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/mathlib-initiative/formalization.yaml/main/schema/formalization.schema.json
+version: "v0.4"
+
+project:
+  name: "robbins-problem"
+  description: >-
+    Robbins' problem of minimizing the expected rank with full information: the least expected rank V(n) of a value
+    selected by a stopping rule from n independent uniform values satisfies V(n) >= 137704521264/2^36 > 2.0038 for
+    every n >= 300, the sequence V(n) converges, and its limit V satisfies 137704521264/2^36 <= V <= 5, so V > 2.
+  authors: [mt0-svg]
+  license: "Apache-2.0"
+
+sources:
+  - title: "Half-prophets and Robbins' problem of minimizing the expected rank"
+    authors: ["F. Thomas Bruss", "Thomas S. Ferguson"]
+    id: "https://doi.org/10.1007/978-1-4612-0749-8_1"
+    type: article
+    location: "p. 7: whether V > 2"
+    relationship: formalizes
+    author_endorsement: not-contacted
+  - title: "What is known about Robbins' problem?"
+    authors: ["F. Thomas Bruss"]
+    id: "https://doi.org/10.1239/jap/1110381374"
+    type: article
+    location: "Section 8: an analytical proof that V < 2 or V >= 2"
+    relationship: formalizes
+    author_endorsement: not-contacted
+  - title: "The value of Robbins' problem is larger than 2"
+    authors: [mt0-svg]
+    id: "https://github.com/mt0-svg/robbins-problem"
+    type: original-proof
+    location: "paper/main.tex, Theorem 1.2"
+    relationship: formalizes
+    author_endorsement: n/a
+
+related_formalizations: []
+
+classification:
+  arxiv: ["math.PR"]
+  msc2020: ["60G40", "62L15", "90C39", "68V15"]
+
+status:
+  scope: "Theorem 1.2 and every other numbered statement of the paper, Question 1.1 aside, which Theorem 1.2 answers."
+  sorry_count: 0
+  sorry_in_definitions: 0
+  axioms: [propext, Classical.choice, Quot.sound]
+  main_results:
+    - declaration: "Robbins.main_so"
+      file: "Robbins/Main.lean"
+      sorry_count: 0
+      axioms: [propext, Classical.choice, Quot.sound]
+      comparator_config: "config.json"
+      literature_dependencies: []
+    - declaration: "Robbins.main_limit"
+      file: "Robbins/Main.lean"
+      sorry_count: 0
+      axioms: [propext, Classical.choice, Quot.sound]
+      comparator_config: "config.json"
+      literature_dependencies: []
+
+automation:
+  methods:
+    - method: agent
+
+fidelity:
+  divergences: >-
+    Values and times are indexed from 0 in the formal proof: v (n + 1) is V(n + 1) for the values x 0, ..., x n, and
+    v 0 = 0 by convention. Rules are deterministic stopping rules given by measurable stop sets of histories
+    (Proposition A.1 shows that their infimum is the infimum over all stopping times, with ties counted either way).
+    The tables of the certificate of Proposition 2.4 are generated data modules, not committed, which
+    code/formal-proof/gen.sh writes and code/formal-proof/modules.sha256 pins.
+
+review:
+  status: agent-reviewed
+  notes: "The proof was refereed by agents with fresh context; Comparator, with nanoda as its kernel, checks the fourteen theorems of config.json against Robbins/Challenge.lean, which imports only Mathlib and holds a verbatim copy of the definitions of Robbins/Statement.lean, of the relaxed problem and of the stopping-time model of Proposition A.1."
+alignment:
+  namespace: "Robbins"
+  statements:
+    - source: "Theorem 1.2"
+      lean: "Robbins.main_so"
+      module: "Robbins/Main.lean"
+      status: proved
+    - source: "Theorem 1.2"
+      lean: "Robbins.main_limit"
+      module: "Robbins/Main.lean"
+      status: proved
+    - source: "Definition 2.1"
+      lean: "Robbins.RelaxedSubSolution"
+      module: "Robbins/Relax/Defs.lean"
+      status: proved
+    - source: "Theorem 2.2"
+      lean: "Robbins.RelaxedSubSolution.val_one_le_v"
+      module: "Robbins/Relax/TheoremB.lean"
+      status: proved
+    - source: "Theorem 2.3"
+      lean: "Robbins.v_mono"
+      module: "Robbins/Target.lean"
+      status: proved
+    - source: "Proposition 2.4"
+      lean: "Robbins.relaxed300"
+      module: "Robbins/Main.lean"
+      status: proved
+    - source: "Lemma 2.5"
+      lean: "Robbins.v_le_five"
+      module: "Robbins/Upper.lean"
+      status: proved
+    - source: "Lemma 3.1"
+      lean: "Robbins.le_v_of_verification"
+      module: "Robbins/Basic/Verification.lean"
+      status: proved
+    - source: "Lemma 3.2"
+      lean: "Robbins.card_lt_add_ite"
+      module: "Robbins/Relax/Order.lean"
+      status: proved
+    - source: "Lemma 3.3"
+      lean: "Robbins.card_traj"
+      module: "Robbins/Relax/Traj.lean"
+      status: proved
+    - source: "Lemma 4.1"
+      lean: "Robbins.Cert.Grid.so_propW"
+      module: "Robbins/Cert/SO/SoundRec.lean"
+      status: proved
+    - source: "Lemma 4.2"
+      lean: "Robbins.Cert.SO.recList_ok"
+      module: "Robbins/Cert/SO/SoundRec.lean"
+      status: proved
+    - source: "Theorem 4.3"
+      lean: "Robbins.Cert.SO.relaxed_of_tables"
+      module: "Robbins/Cert/SO/Sound.lean"
+      status: proved
+    - source: "Lemma 4.4"
+      lean: "Robbins.Cert.SO.scalar_min"
+      module: "Robbins/Cert/SO/SoundArith.lean"
+      status: proved
+    - source: "Lemma 4.5"
+      lean: "Robbins.Cert.SO.cont_ge_cell"
+      module: "Robbins/Cert/SO/SoundCell.lean"
+      status: proved
+    - source: "Lemma 4.6"
+      lean: "Robbins.Cert.SO.integral_min_count"
+      module: "Robbins/Cert/SO/SoundArith.lean"
+      status: proved
+    - source: "Proposition 4.7"
+      lean: "Robbins.Cert.SO.bound_le_integral"
+      module: "Robbins/Cert/SO/SoundList.lean"
+      status: proved
+    - source: "Proposition A.1"
+      lean: "Robbins.robbinsValue_eq_v"
+      module: "Robbins/StatementCheck/Equiv.lean"
+      status: proved
+    - source: "Lemma B.1"
+      lean: "Robbins.Cert.SO.Epen_le"
+      module: "Robbins/Cert/SO/SoundArith.lean"
+      status: proved
+    - source: "Lemma B.2"
+      lean: "Robbins.Cert.SO.cell2_le"
+      module: "Robbins/Cert/SO/SoundArith.lean"
+      status: proved
+    - source: "Proposition B.3"
+      lean: "Robbins.Cert.SO.cell2_div_le"
+      module: "Robbins/Cert/SO/SoundList.lean"
+      status: proved
+    - source: "Corollary B.4"
+      lean: "Robbins.Cert.SO.le_v_of_tables"
+      module: "Robbins/Cert/SO/Sound.lean"
+      status: proved
